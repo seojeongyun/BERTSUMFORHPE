@@ -64,6 +64,7 @@ elif config.EMB_MODE == 'RELATIVE':
     config.PRETRAINED_PATH = '/storage/jysuh/BERTSUMFORHPE/checkpoint/jy_weight/[Relative] LAYERS_NUM:6 DIM:768 ACT:GELU s:10 m:0.1/metric_learning_model.pth.tar'
     # config.PRETRAINED_EMB_PATH = '/storage/jysuh/BERTSUMFORHPE/checkpoint/jy_weight/[Relative] LAYERS_NUM:4 DIM:768 ACT:GELU s:10 m:0.1/nn_embedding_model.pt'
 
+## 260225
 elif config.EMB_MODE == 'BASIS':
     config.USE_EMBEDDING = True
     # basis requires a pretrained path.

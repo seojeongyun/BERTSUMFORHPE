@@ -112,7 +112,7 @@ class Trainer(object):
         #
         self.loss = torch.nn.CrossEntropyLoss(reduction="mean")
         #
-        if self.args.emb_mode == 'RELATIVE_BASIS':
+        if self.args.emb_mode == 'RELATIVE_BASIS' or self.args.emb_mode == 'BASIS':
             self.preweights = torch.load(self.config.PRETRAINED_EMB_PATH)
             self.pre_weights = nn.Embedding.from_pretrained(self.preweights['weight'], freeze=True).to(self.device)
         elif self.args.emb_mode == 'RELATIVE':

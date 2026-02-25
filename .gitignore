@@ -1,0 +1,22 @@
+cat > .gitignore << 'EOF'
+# python
+__pycache__/
+*.pyc
+
+# venv / ide
+.venv/
+venv/
+.idea/
+
+# cache/temp/artifacts
+.cache/
+temp/
+model_save/
+
+# large binary artifacts
+*.pt
+*.pth
+*.bin
+*.ckpt
+*.zip
+EOF

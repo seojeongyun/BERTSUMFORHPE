@@ -270,20 +270,21 @@ class Trainer(object):
                 B = len(exercise_name)
                 D = self.config.CLASS_NUM + self.config.NUM_CONDITIONS
 
-                # 1) GPU¿¡¼­ label »ý¼º
                 label = torch.zeros((B, D), device=self.device, dtype=torch.float32)
 
-                # 2) exercise one-hot (raw¿¡¼­ 22 »©¼­ 0~40À¸·Î)
                 ex_idx = torch.tensor(exercise_name, dtype=torch.long, device=self.device) - 22
                 label[torch.arange(B, device=self.device), ex_idx] = 1.0
 
-                # 3) condition Ã¤¿ì±â (raw condition_num¿¡¼­ 22 »©¼­ global index·Î)
-                #    True -> 0.0, False -> 1.0
-                for b, conds in enumerate(conditions):
-                    for condition_num, flag in conds:
-                        label[b, int(condition_num) - 22] = 0.0 if flag else 1.0
+                flat = [(b, int(c) - 22, 0.0 if f else 1.0)
+                        for b, conds in enumerate(conditions)
+                        for c, f in conds]
+                if flat:
+                    rr, cc, vv = zip(*flat)
+                    rr = torch.tensor(rr, device=self.device)
+                    cc = torch.tensor(cc, device=self.device)
+                    vv = torch.tensor(vv, device=self.device, dtype=torch.float32)
+                    label[rr, cc] = vv
 
-                label = label.to(self.device, non_blocking=True).float()
                 output = self.embedder(videos)
                 #
                 input_embs, segs, pad_mask = self.emb_(output)
@@ -395,8 +396,25 @@ class Trainer(object):
                     condition_tp = 0
                     condition_fp = 0
                     condition_fn = 0
-                    for step, (videos, label) in enumerate(self.valid_data_loader):
-                        label = label.to(self.device, non_blocking=True).float()
+                    for step, (videos, exercise_name, conditions) in enumerate(self.valid_data_loader):
+                        B = len(exercise_name)
+                        D = self.config.CLASS_NUM + self.config.NUM_CONDITIONS
+
+                        label = torch.zeros((B, D), device=self.device, dtype=torch.float32)
+
+                        ex_idx = torch.tensor(exercise_name, dtype=torch.long, device=self.device) - 22
+                        label[torch.arange(B, device=self.device), ex_idx] = 1.0
+
+                        flat = [(b, int(c) - 22, 0.0 if f else 1.0)
+                                for b, conds in enumerate(conditions)
+                                for c, f in conds]
+                        if flat:
+                            rr, cc, vv = zip(*flat)
+                            rr = torch.tensor(rr, device=self.device)
+                            cc = torch.tensor(cc, device=self.device)
+                            vv = torch.tensor(vv, device=self.device, dtype=torch.float32)
+                            label[rr, cc] = vv
+
                         output = self.embedder(videos)
                         #
                         input_embs, segs, pad_mask = self.emb_(output)

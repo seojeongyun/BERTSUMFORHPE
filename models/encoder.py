@@ -11,7 +11,7 @@ class Classifier(nn.Module):
         super(Classifier, self).__init__()
         # ver 1
         self.linear = nn.Linear(hidden_size, int(hidden_size / 2))
-        self.classifier =nn.Linear(int(hidden_size / 2) ,41)
+        self.classifier =nn.Linear(int(hidden_size / 2) ,41+97)
         self.act = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
         # ver 2

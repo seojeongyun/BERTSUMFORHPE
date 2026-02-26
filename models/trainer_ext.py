@@ -108,9 +108,14 @@ class Trainer(object):
         if self.args.mode == 'train-valid':
             self.video_dataset = Video_Loader(config=self.config, mode='validate')
             self.valid_data_loader = self.get_dataloader(self.video_dataset)
+
         self.embedder = Embedder(self.config, mode=self.args.mode).to(self.device)
+        self.condition_vocab, self.exercise_vocab = self.get_condition_vocab()
+        self.cond_int2str, self.ex_int2str = self.reverse_vocab()
         #
-        self.loss = torch.nn.CrossEntropyLoss(reduction="mean")
+        # 260226 single label classification
+        # self.loss = torch.nn.CrossEntropyLoss(reduction="mean")
+        self.loss = torch.nn.MultiLabelSoftMarginLoss()
         #
         if self.args.emb_mode == 'RELATIVE_BASIS' or self.args.emb_mode == 'BASIS':
             self.preweights = torch.load(self.config.PRETRAINED_EMB_PATH)
@@ -124,6 +129,22 @@ class Trainer(object):
         if model:
             self.model.train()
 
+    def get_condition_vocab(self):
+        import pickle
+
+        with open(self.config.CONDITION_VOCAB_PATH,'rb') as f:
+            condition_vocab = pickle.load(f)
+
+        with open(self.config.T_VOCAB_PATH, 'rb') as f:
+            exercise_vocab = pickle.load(f)
+        return condition_vocab, exercise_vocab
+
+    def reverse_vocab(self):
+        cond_int2str = {v: k for k, v in self.condition_vocab.items()}
+        ex_int2str = {v: k for k, v in self.exercise_vocab.items()}
+
+        return cond_int2str, ex_int2str
+
     def get_dataloader(self, dataset):
         video_loader = torch.utils.data.DataLoader(
             dataset,
@@ -134,52 +155,6 @@ class Trainer(object):
             collate_fn=self.video_dataset.collate_fn)
 
         return video_loader
-
-    # def emb_(self, data):
-    #     pre_weights = nn.Embedding.from_pretrained(self.preweights['weight'], freeze=True)
-    #     pad_emb = pre_weights(torch.tensor(self.args.pad_id).to(self.device))
-    #     sep_emb = pre_weights(torch.tensor(self.args.sep_id).to(self.device))
-    #     #
-    #     segment_emb = nn.Embedding(2, 768).to(self.device)
-    #     cls_emb = torch.zeros([768]).to(self.device)
-    #     pos_enc = PositionalEncoding(dropout=0.2, dim=768)
-    #     #
-    #     batch_videos = []
-    #     batch_segs = []
-    #     batch_pos = []
-    #     for video_idx in range(data.shape[0]):
-    #         video = data[video_idx]
-    #         tensor_list = [cls_emb]
-    #         seg_list = [0]
-    #         for frame_idx in range(self.config.MAX_FRAMES):
-    #             if frame_idx % 2 == 0:
-    #                 seg_id = 0
-    #             else:
-    #                 seg_id = 1
-    #             tensor_list.append(sep_emb)
-    #             seg_list.append(seg_id)
-    #             frame = video[frame_idx]
-    #             for joint in range(len(frame)):
-    #                 tensor_list.append(frame[joint].to(self.device))
-    #                 seg_list.append(seg_id)
-    #         A_video = torch.stack(tensor_list)
-    #         batch_videos.append(A_video)
-    #         A_video_segs = torch.tensor(seg_list)
-    #         batch_segs.append(A_video_segs)
-    #         A_video_pos = pos_enc(A_video).squeeze(0)
-    #         batch_pos.append(A_video_pos)
-    #     inputs_embeds = torch.stack(batch_videos)
-    #     seg_tensor = torch.stack(batch_segs).to(self.device)
-    #     seg_emb = segment_emb(seg_tensor)
-    #     pos_emb = torch.stack(batch_pos).to(self.device)
-    #     #
-    #     embeddings = inputs_embeds.to(self.device) + seg_emb.to(self.device) + pos_emb.to(self.device)
-    #
-    #     mask_src = (1 - (torch.all(inputs_embeds == pad_emb, dim=-1) * 1)).to(self.device)
-    #     mask = rearrange(mask_src, 'bs seq_len -> bs 1 1 seq_len')
-    #     padding_mask = repeat(mask, 'bs 1 1 seq_len -> bs 1 new seq_len', new=mask_src.shape[-1])
-    #
-    #     return embeddings, seg_emb, padding_mask
 
     def emb_(self, data):
 
@@ -272,63 +247,111 @@ class Trainer(object):
         return embeddings, seg_emb, padding_mask
 
     def train(self, device, train_steps, valid_iter_fct=None, valid_steps=-1):
-        training_loss_hist=[]
-        training_acc_hist=[]
-
         logger.info("Start training...")        #
-        print("============== TRAIN START ==============")
+        print("============== [Model: TRAIN_MODE] TRAIN START ==============")
         for epoch in range(self.train_epoch):
             self.model.train()
             self.embedder.train()
-            print('train model on')
             #
             Train_total_loss = 0
-            Train_correct_predictions = 0
+
+            exercise_classification_acc = 0
+            #
+            condition_tp = 0
+            condition_fp = 0
+            condition_fn = 0
+            #
+            total_samples_seen = 0
             start = time.time()
 
-            some_step_correct_predictions = 0
-            some_step_loss = 0
-            for step, (videos, exercise_name) in enumerate(self.data_loader):
-                tgt = exercise_name.to(device, non_blocking=True)
+            for step, (videos, label) in enumerate(self.data_loader):
+                label = label.to(self.device, non_blocking=True)
                 output = self.embedder(videos)
                 #
                 input_embs, segs, pad_mask = self.emb_(output)
                 sent_scores = self.model(input_embs, segs, pad_mask)
-                pred_exercise = torch.argmax(sent_scores, dim=1)
 
                 # Calculate LOSS
-                loss = self.loss(sent_scores, tgt)
+                loss = self.loss(sent_scores, label)
+                sent_scores = torch.sigmoid(sent_scores)
 
                 Train_total_loss += loss.item()
-                some_step_loss += loss.item()
 
-                # Calculate ACC
-                some_step_correct_predictions += (pred_exercise == tgt).sum().item()
-                Train_correct_predictions += (pred_exercise == tgt).sum().item()
+                # Calculate Exercise Classification ACC
+                pred_exercise = torch.argmax(sent_scores[:, :self.config.CLASS_NUM], dim=1)
+                target_exercise = torch.argmax(label[:, :self.config.CLASS_NUM], dim=1)
+                exercise_classification_acc +=  (pred_exercise == target_exercise).sum().item()
+
+                # Calculate Condition Classification Precision, Recall
+                pred_condition = (sent_scores[:, self.config.CLASS_NUM:] > 0.5)
+                target_condition = (label[:, self.config.CLASS_NUM:] > 0.5)
+
+                # DEBUG
+                # if step == 0:
+                #     p_exercise, t_exercise = self.ex_int2str[int(pred_exercise[0])+22], self.ex_int2str[
+                #         int(target_exercise[0])+22]
+                #     print('Expected: {}, \nPredicted: {}'.format(p_exercise, t_exercise))
                 #
-                correct = (pred_exercise == tgt).sum().item()
-                # print("Correct predictions:", correct)
+                #     p_condition, t_condition = pred_condition[0].nonzero(as_tuple=True)[0], \
+                #     target_condition[0].nonzero(as_tuple=True)[0]
+                #     p_condition, t_condition = p_condition + self.config.CLASS_NUM, t_condition + self.config.CLASS_NUM
+                #     p_condition_lst, t_condition_lst = [], []
+                #     for i in range(len(pred_condition)):
+                #         p_condition_lst.append(self.cond_int2str[int(p_condition[i]) + 22])
+                #     for i in range(len(t_condition)):
+                #         t_condition_lst.append(self.cond_int2str[int(t_condition[i]) + 22])
+                #
+                #     print('Expected: {}\nPredicted: {}'.format(
+                #         ', '.join(t_condition_lst),
+                #         ', '.join(p_condition_lst)
+                #     ))
+
+                tp = (pred_condition & target_condition).sum().item()
+                fp = (pred_condition & ~target_condition).sum().item()
+                fn = (~pred_condition & target_condition).sum().item()
+
+                condition_tp += tp
+                condition_fp += fp
+                condition_fn += fn
+
+                if step % 1000 == 0 and step != 0:
+                    ex_acc = 100.0 * exercise_classification_acc / total_samples_seen
+                    precision = condition_tp / (condition_tp + condition_fp + 1e-8)
+                    recall = condition_tp / (condition_tp + condition_fn + 1e-8)
+                    f1 = 2 * precision * recall / (precision + recall + 1e-8)
+
+                    print(f"[TRAIN][Step {step}] "
+                          f"Loss: {Train_total_loss / (step + 1):.4f} | "
+                          f"Exercise_ACC: {ex_acc:.2f}% | "
+                          f"P: {precision:.4f} | "
+                          f"R: {recall:.4f} | "
+                          f"F1: {f1:.4f}")
+                #
                 # UPDATE
                 self.optim.optimizer.zero_grad()
-                #
                 loss.backward()
-                #
                 self.optim.optimizer.step()
+            #
             end = time.time()
             epoch_time = end - start
-            throughput = len(self.data_loader) / epoch_time  # samples/sec
+            # throughput
+            throughput = len(self.data_loader.dataset) / epoch_time  # samples/sec
             print(f"Throughput: {throughput:.1f} samples/s")
-
             #
+            # elapsed time
             hours, rem = divmod(epoch_time, 3600)
             minutes, seconds = divmod(rem, 60)
             print(f"Elapsed time per epoch: {int(hours)}h {int(minutes)}m {seconds:.1f}s")
             #
+            # Metric
             avg_train_loss = Train_total_loss / len(self.data_loader)
-            Train_accuracy = 100. * Train_correct_predictions / len(self.data_loader.dataset)
-            print('[TRAIN] Epoch: {} Average loss: {:.6f}, Accuracy: {:.2f}%'
-                  .format(1 + epoch, avg_train_loss, Train_accuracy))
-            training_loss_hist.append(avg_train_loss)
+            Train_exercise_cls_accuracy = 100. * exercise_classification_acc / len(self.data_loader.dataset)
+            precision = condition_tp / (condition_tp + condition_fp + 1e-8)
+            recall = condition_tp / (condition_tp + condition_fn + 1e-8)
+            f1 = 2 * precision * recall / (precision + recall + 1e-8)
+            #
+            print('[TRAIN] Epoch: {} Average loss: {:.6f}, Exercise_CLS_Accuracy: {:.2f}%, Condition_CLS_Precision: {:.4f}, Condition_CLS_Recall: {:.4f}, Condition_CLS_F1: {:.4f}'
+                  .format(1 + epoch, avg_train_loss, Train_exercise_cls_accuracy, precision, recall, f1))
             #
             # Scheduler
             if self.args.use_scheduler:
@@ -338,35 +361,69 @@ class Trainer(object):
                 print("current_lr: {:.6f}".format(lr_from_optimizer))
 
             if self.args.mode == 'train-valid':
-                print('******* Strat Validation *******')
+                print("============== [Model: EVAL_MODE] VALID START ==============")
                 self.model.eval()
                 self.embedder.eval()
-                print('eval model on')
-                stats = Statistics()
 
                 with torch.no_grad():
-                    Valid_acc_hist = []
-                    Valid_correct_predictions = 0
-                    for step, (videos, exercise_name) in enumerate(self.valid_data_loader):
+                    exercise_classification_acc = 0
+                    #
+                    condition_tp = 0
+                    condition_fp = 0
+                    condition_fn = 0
+                    for step, (videos, label) in enumerate(self.valid_data_loader):
+                        label = label.to(self.device, non_blocking=True)
                         output = self.embedder(videos)
                         #
                         input_embs, segs, pad_mask = self.emb_(output)
-                        tgt = exercise_name.to(device, non_blocking=True)
-                        sent_scores = self.model(input_embs, segs, pad_mask).to(self.device)
-                        pred_exercise = torch.argmax(sent_scores, dim=1)
+                        sent_scores = self.model(input_embs, segs, pad_mask)
+                        sent_scores = torch.sigmoid(sent_scores)
+                        #
+                        # Calculate Exercise Classification ACC
+                        pred_exercise = torch.argmax(sent_scores[:, :self.config.CLASS_NUM], dim=1)
+                        target_exercise = torch.argmax(label[:, :self.config.CLASS_NUM], dim=1)
+                        exercise_classification_acc += (pred_exercise == target_exercise).sum().item()
 
-                        correct_predictions = (pred_exercise == tgt).sum().item()
-                        Valid_correct_predictions += correct_predictions
+                        # Calculate Condition Classification Precision, Recall
+                        pred_condition = (sent_scores[:, self.config.CLASS_NUM:] > 0.5)
+                        target_condition = (label[:, self.config.CLASS_NUM:] > 0.5)
 
-                        accuracy = correct_predictions / tgt.size(0) * 100
-                        # if step % 20 == 0:
-                        #     print('[VALID] step:{},  acc:{:.2f}%'.format(step, accuracy))
-                        Valid_acc_hist.append(accuracy)
-                    # total_val_acc = sum(Valid_acc_hist) / len(Valid_acc_hist)
-                    # print('[Final VALID] acc:{:.2f}%'.format(total_val_acc))
-                    total_val_acc = 100. * Valid_correct_predictions / len(self.valid_data_loader.dataset)
-                    print('[VALID] Epoch: {}, Accuracy: {:.2f}%'
-                          .format(1 + epoch, total_val_acc))
+                        # DEBUG
+                        if step == 0:
+                            p_exercise, t_exercise = self.ex_int2str[int(pred_exercise[0]) + 22], self.ex_int2str[
+                                int(target_exercise[0]) + 22]
+                            print('Expected: {}, \nPredicted: {}'.format(p_exercise, t_exercise))
+
+                            p_condition, t_condition = pred_condition[0].nonzero(as_tuple=True)[0], \
+                                target_condition[0].nonzero(as_tuple=True)[0]
+                            p_condition, t_condition = p_condition + self.config.CLASS_NUM, t_condition + self.config.CLASS_NUM
+                            p_condition_lst, t_condition_lst = [], []
+                            for i in range(len(pred_condition)):
+                                p_condition_lst.append(self.cond_int2str[int(p_condition[i]) + 22])
+                            for i in range(len(t_condition)):
+                                t_condition_lst.append(self.cond_int2str[int(t_condition[i]) + 22])
+
+                            print('Expected: {}\nPredicted: {}'.format(
+                                ', '.join(t_condition_lst),
+                                ', '.join(p_condition_lst)
+                            ))
+
+                        tp = (pred_condition & target_condition).sum().item()
+                        fp = (pred_condition & ~target_condition).sum().item()
+                        fn = (~pred_condition & target_condition).sum().item()
+
+                        condition_tp += tp
+                        condition_fp += fp
+                        condition_fn += fn
+
+                    Valid_exercise_cls_accuracy = 100. * exercise_classification_acc / len(self.valid_data_loader.dataset)
+                    precision = condition_tp / (condition_tp + condition_fp + 1e-8)
+                    recall = condition_tp / (condition_tp + condition_fn + 1e-8)
+                    f1 = 2 * precision * recall / (precision + recall + 1e-8)
+                    #
+                    print(
+                        '[VALID] Exercise_CLS_Accuracy: {:.2f}%, Condition_CLS_Precision: {:.4f}, Condition_CLS_Recall: {:.4f}, Condition_CLS_F1: {:.4f}'
+                        .format(Valid_exercise_cls_accuracy, precision, recall, f1))
 
 
     def validate(self, video_loader, video_dataset, step=0):
@@ -375,8 +432,6 @@ class Trainer(object):
         Returns:
             :obj:`nmt.Statistics`: validation loss statistics
         """
-        # Set model in validating mode.
-        # valid_vocab = video_dataset.vocab
         self.model.eval()
         stats = Statistics()
 

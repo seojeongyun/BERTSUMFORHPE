@@ -17,7 +17,7 @@ config.BATCH_SIZE = 32
 
 # MODE
 config.TASK_MODE = 'TRAIN' # ['TRAIN', 'VAL']
-config.EMB_MODE = 'BASIS' # ['RELATIVE_BASIS', 'RELATIVE', 'BASIS']
+config.EMB_MODE = 'RELATIVE_BASIS' # ['RELATIVE_BASIS', 'RELATIVE', 'BASIS']
 config.BASIS_FREEZE = False     # False -> False /
 config.RELATIVE_FREEZE = True   # False -> True
 
@@ -26,16 +26,19 @@ config.SEED = 478
 
 # DATA
 # AT SERVER 1
-config.T_DATA_PATH = '/storage/jysuh/BERTSUMFORHPE/embedder_dataset/train.pkl'
+config.T_DATA_PATH = '/storage/jysuh/BERTSUMFORHPE/embedder_dataset/multi_label_classification_train.pkl'
 config.T_VOCAB_PATH = '/storage/jysuh/BERTSUMFORHPE/embedder_dataset/train_vocab.pkl'
-config.V_DATA_PATH = '/storage/jysuh/BERTSUMFORHPE/embedder_dataset/valid.pkl'
+config.V_DATA_PATH = '/storage/jysuh/BERTSUMFORHPE/embedder_dataset/multi_label_classification_valid.pkl'
 config.V_VOCAB_PATH = '/storage/jysuh/BERTSUMFORHPE/embedder_dataset/valid_vocab.pkl'
+config.CONDITION_VOCAB_PATH = '/storage/jysuh/BERTSUMFORHPE/embedder_dataset/condition_vocab.pkl'
 
 #
 config.IMG_SIZE = [1920, 1080]
+config.CLASS_NUM = 41
+config.NUM_CONDITIONS = 97
 config.NUM_JOINTS = 22  # 0, 1 = PAD, SEP, others joints
 config.MAX_FRAMES = 21
-config.CLASS_NUM = 41 if config.TASK_MODE == 'TRAIN' else 27
+# config.CLASS_NUM = 41 if config.TASK_MODE == 'TRAIN' else 27
 config.JOINTS_NAME = [
     'Left Shoulder', 'Right Shoulder',
     'Left Elbow', 'Right Elbow',

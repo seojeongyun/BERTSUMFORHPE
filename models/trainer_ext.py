@@ -289,18 +289,10 @@ class Trainer(object):
             some_step_correct_predictions = 0
             some_step_loss = 0
             for step, (videos, exercise_name) in enumerate(self.data_loader):
-                # === DEBUG ===
-                # if step == 0:
-                #     original = {}
-                #     for name, p in self.embedder.named_parameters():
-                #         original[name] = p.detach().cpu().clone()
-                # === DEBUG ===
-                # videos = videos.to(device, non_blocking=True)
                 tgt = exercise_name.to(device, non_blocking=True)
                 output = self.embedder(videos)
                 #
                 input_embs, segs, pad_mask = self.emb_(output)
-                # tgt = torch.tensor(exercise_name).to(device) - 22
                 sent_scores = self.model(input_embs, segs, pad_mask)
                 pred_exercise = torch.argmax(sent_scores, dim=1)
 
@@ -322,38 +314,6 @@ class Trainer(object):
                 loss.backward()
                 #
                 self.optim.optimizer.step()
-
-                # === DEBUG ===
-                # updated = {}
-                # for name, p in self.embedder.named_parameters():
-                #     updated[name] = p.detach().cpu().clone()
-                #
-                # for name, p in self.embedder.named_parameters():
-                #     diff = not torch.allclose(original[name], updated[name], atol=1e-6)
-                #     if config.BASIS_FREEZE and config.RELATIVE_FREEZE and diff == True:
-                #         raise ValueError("IN FREEZE, PARAMETERS ARE CHANGED")
-                #     elif not config.BASIS_FREEZE and not config.RELATIVE_FREEZE and diff == False:
-                #         raise ValueError( )
-                # === DEBUG ===
-
-                # if step % 20 == 0:
-                #     accuracy = some_step_correct_predictions / (tgt.size(0) * 20) * 100
-                #     print('step:{},  loss:{:.3f},  acc:{:.2f}%'.format(
-                #         step, some_step_loss / 20, accuracy))
-                    #
-                    # some_step_correct_predictions = 0
-                    # some_step_loss = 0
-                # if step % 20 == 0:
-                #     num_samples = tgt.size(0) * 20  # ���� 20 step ������ ���� ��
-                #     accuracy = some_step_correct_predictions / num_samples * 100
-                #     print('[TRAIN] step:{},  loss:{:.3f},  acc:{:.2f}%'.format(
-                #         step, some_step_loss / 20, accuracy))
-                #
-                #     some_step_correct_predictions = 0
-                #     some_step_loss = 0
-                #     debug_cnt += 1
-                # if debug_cnt == 3:
-                #     break
             end = time.time()
             epoch_time = end - start
             throughput = len(self.data_loader) / epoch_time  # samples/sec
@@ -376,13 +336,7 @@ class Trainer(object):
                 # DEBUR - SCHEDULER
                 lr_from_optimizer = self.optim.optimizer.param_groups[0]['lr']
                 print("current_lr: {:.6f}".format(lr_from_optimizer))
-            # training_acc_hist.append(Train_accuracy)
-            #
-            # DEBUG -> do not save ckpt
-            # if min(training_loss_hist) == avg_train_loss:
-            #     dir_name = self.config.DIR_PATH
-            #     training_loss_hist = [avg_train_loss]
-            #     self._save(dir_name)
+
             if self.args.mode == 'train-valid':
                 print('******* Strat Validation *******')
                 self.model.eval()

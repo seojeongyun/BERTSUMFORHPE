@@ -264,8 +264,10 @@ class Trainer(object):
             total_samples_seen = 0
             start = time.time()
 
-            for step, (videos, label) in enumerate(self.data_loader):
-                label = label.to(self.device, non_blocking=True)
+            for step, (videos, label) in enumerate(self.data_loader): # 5194 steps
+                step_start = time.time()
+                #
+                label = label.to(self.device, non_blocking=True).float()
                 output = self.embedder(videos)
                 #
                 input_embs, segs, pad_mask = self.emb_(output)
@@ -273,7 +275,6 @@ class Trainer(object):
 
                 # Calculate LOSS
                 loss = self.loss(sent_scores, label)
-                sent_scores = torch.sigmoid(sent_scores)
 
                 Train_total_loss += loss.item()
 
@@ -283,7 +284,7 @@ class Trainer(object):
                 exercise_classification_acc +=  (pred_exercise == target_exercise).sum().item()
 
                 # Calculate Condition Classification Precision, Recall
-                pred_condition = (sent_scores[:, self.config.CLASS_NUM:] > 0.5)
+                pred_condition = torch.sigmoid(sent_scores[:, self.config.CLASS_NUM:]) > 0.5
                 target_condition = (label[:, self.config.CLASS_NUM:] > 0.5)
 
                 # DEBUG
@@ -296,7 +297,7 @@ class Trainer(object):
                 #     target_condition[0].nonzero(as_tuple=True)[0]
                 #     p_condition, t_condition = p_condition + self.config.CLASS_NUM, t_condition + self.config.CLASS_NUM
                 #     p_condition_lst, t_condition_lst = [], []
-                #     for i in range(len(pred_condition)):
+                #     for i in range(len(p_condition)):
                 #         p_condition_lst.append(self.cond_int2str[int(p_condition[i]) + 22])
                 #     for i in range(len(t_condition)):
                 #         t_condition_lst.append(self.cond_int2str[int(t_condition[i]) + 22])
@@ -314,6 +315,9 @@ class Trainer(object):
                 condition_fp += fp
                 condition_fn += fn
 
+                #
+                batch_size = label.size(0)
+                total_samples_seen += batch_size
                 if step % 1000 == 0 and step != 0:
                     ex_acc = 100.0 * exercise_classification_acc / total_samples_seen
                     precision = condition_tp / (condition_tp + condition_fp + 1e-8)
@@ -331,6 +335,10 @@ class Trainer(object):
                 self.optim.optimizer.zero_grad()
                 loss.backward()
                 self.optim.optimizer.step()
+
+                step_end = time.time()
+                step_time = step_end - step_start
+                # print(f"[Step {step}/{len(self.data_loader)}] Step Time: {step_time:.4f} sec")
             #
             end = time.time()
             epoch_time = end - start
@@ -372,12 +380,11 @@ class Trainer(object):
                     condition_fp = 0
                     condition_fn = 0
                     for step, (videos, label) in enumerate(self.valid_data_loader):
-                        label = label.to(self.device, non_blocking=True)
+                        label = label.to(self.device, non_blocking=True).float()
                         output = self.embedder(videos)
                         #
                         input_embs, segs, pad_mask = self.emb_(output)
                         sent_scores = self.model(input_embs, segs, pad_mask)
-                        sent_scores = torch.sigmoid(sent_scores)
                         #
                         # Calculate Exercise Classification ACC
                         pred_exercise = torch.argmax(sent_scores[:, :self.config.CLASS_NUM], dim=1)
@@ -385,7 +392,7 @@ class Trainer(object):
                         exercise_classification_acc += (pred_exercise == target_exercise).sum().item()
 
                         # Calculate Condition Classification Precision, Recall
-                        pred_condition = (sent_scores[:, self.config.CLASS_NUM:] > 0.5)
+                        pred_condition = torch.sigmoid(sent_scores[:, self.config.CLASS_NUM:]) > 0.5
                         target_condition = (label[:, self.config.CLASS_NUM:] > 0.5)
 
                         # DEBUG
@@ -398,7 +405,7 @@ class Trainer(object):
                                 target_condition[0].nonzero(as_tuple=True)[0]
                             p_condition, t_condition = p_condition + self.config.CLASS_NUM, t_condition + self.config.CLASS_NUM
                             p_condition_lst, t_condition_lst = [], []
-                            for i in range(len(pred_condition)):
+                            for i in range(len(p_condition)):
                                 p_condition_lst.append(self.cond_int2str[int(p_condition[i]) + 22])
                             for i in range(len(t_condition)):
                                 t_condition_lst.append(self.cond_int2str[int(t_condition[i]) + 22])

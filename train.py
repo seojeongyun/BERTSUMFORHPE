@@ -140,6 +140,11 @@ if __name__ == '__main__':
     parser.add_argument("-bert_random_init", default=False)
     parser.add_argument("-embedder_random_init", default=False)
 
+    parser.add_argument("-loss_type", default='BCEWithLogitsLoss',
+                        type=str) # ['BCEWithLogitsLoss', 'MultiLabelSoftMarginLoss']
+    parser.add_argument("-weighted_loss", default=True, type=bool)
+    parser.add_argument("-weighted_loss_value", default=18, type=int)
+
     args = parser.parse_args()
     #
     fix_seed(args.seed)

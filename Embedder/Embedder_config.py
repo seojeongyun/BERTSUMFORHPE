@@ -10,7 +10,7 @@ config.INIT_RELATIVE = True
 #
 
 # GPU / WORKERS / BATCH
-config.GPUS = '0'
+config.GPUS = '1'
 config.WORKERS = 0
 config.DEVICE = torch.device(f"cuda:{config.GPUS}" if torch.cuda.is_available() else "cpu")
 config.BATCH_SIZE = 32
@@ -73,8 +73,8 @@ elif config.EMB_MODE == 'BASIS':
     # basis requires a pretrained path.
     # Although linear net is not used, out_feat must be extracted
     # from the PRETRAINED_PATH to set nn.embedder output dimension.
-    config.PRETRAINED_PATH = '/storage/jysuh/BERTSUMFORHPE/checkpoint/jy_weight/[Relative] LAYERS_NUM:4 DIM:768 ACT:GELU s:10 m:0.1/metric_learning_model.pth.tar'
-    config.PRETRAINED_EMB_PATH = '/storage/jysuh/BERTSUMFORHPE/checkpoint/jy_weight/[Basis+Relative] LAYERS_NUM:4 DIM:768 ACT:GELU s:10 m:0.1/nn_embedding_model.pt'
+    config.PRETRAINED_PATH = '/storage/jysuh/BERTSUMFORHPE/checkpoint/jy_weight/[Relative] LAYERS_NUM:6 DIM:768 ACT:GELU s:10 m:0.1/metric_learning_model.pth.tar'
+    config.PRETRAINED_EMB_PATH = '/storage/jysuh/BERTSUMFORHPE/checkpoint/jy_weight/[Basis+Relative] LAYERS_NUM:6 DIM:768 ACT:GELU s:10 m:0.1/nn_embedding_model.pt'
 
 # ========================
 OUT_FEAT = int(config.PRETRAINED_PATH.split('/')[6].split()[2].split(':')[-1])

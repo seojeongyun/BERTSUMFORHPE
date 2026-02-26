@@ -115,8 +115,31 @@ class Trainer(object):
         #
         # 260226 single label classification
         # self.loss = torch.nn.CrossEntropyLoss(reduction="mean")
-        self.loss = torch.nn.MultiLabelSoftMarginLoss()
         #
+        # 260226 multi label classification (not use weighted loss)
+        # self.loss = torch.nn.MultiLabelSoftMarginLoss()
+        #
+        if self.args.loss_type == 'BCEWithLogitsLoss':
+            if self.args.weighted_loss:
+                D = self.config.CLASS_NUM + self.config.NUM_CONDITIONS
+                C = self.config.CLASS_NUM
+                weight = self.args.weighted_loss_value
+
+                pos_weight = torch.ones(D, device=self.device)
+                pos_weight[:C] = 1.0
+                pos_weight[C:] = weight
+
+                self.loss = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+                print(f"[Loss Setup] Weighted BCEWithLogitsLoss activated (pos_weight={weight}).")
+
+            else:
+                self.loss = torch.nn.BCEWithLogitsLoss()
+                print("[Loss Setup] Standard BCEWithLogitsLoss activated (no class weighting).")
+
+        else:
+            self.loss = torch.nn.MultiLabelSoftMarginLoss()
+            print("[Loss Setup] MultiLabelSoftMarginLoss activated (no class weighting).")
+                #
         if self.args.emb_mode == 'RELATIVE_BASIS' or self.args.emb_mode == 'BASIS':
             self.preweights = torch.load(self.config.PRETRAINED_EMB_PATH)
             self.pre_weights = nn.Embedding.from_pretrained(self.preweights['weight'], freeze=True).to(self.device)
@@ -248,8 +271,8 @@ class Trainer(object):
 
     def train(self, device, train_steps, valid_iter_fct=None, valid_steps=-1):
         logger.info("Start training...")        #
-        print("============== [Model: TRAIN_MODE] TRAIN START ==============")
         for epoch in range(self.train_epoch):
+            print("============== [Model: TRAIN_MODE] TRAIN START ==============")
             self.model.train()
             self.embedder.train()
             #
@@ -355,18 +378,10 @@ class Trainer(object):
 
                 step_end = time.time()
                 step_time = step_end - step_start
-                print(f"[Step {step}/{len(self.data_loader)}] Step Time: {step_time:.4f} sec")
+                # print(f"[Step {step}/{len(self.data_loader)}] Step Time: {step_time:.4f} sec")
             #
             end = time.time()
             epoch_time = end - start
-            # throughput
-            throughput = len(self.data_loader.dataset) / epoch_time  # samples/sec
-            print(f"Throughput: {throughput:.1f} samples/s")
-            #
-            # elapsed time
-            hours, rem = divmod(epoch_time, 3600)
-            minutes, seconds = divmod(rem, 60)
-            print(f"Elapsed time per epoch: {int(hours)}h {int(minutes)}m {seconds:.1f}s")
             #
             # Metric
             avg_train_loss = Train_total_loss / len(self.data_loader)
@@ -377,6 +392,14 @@ class Trainer(object):
             #
             print('[TRAIN] Epoch: {} Average loss: {:.6f}, Exercise_CLS_Accuracy: {:.2f}%, Condition_CLS_Precision: {:.4f}, Condition_CLS_Recall: {:.4f}, Condition_CLS_F1: {:.4f}'
                   .format(1 + epoch, avg_train_loss, Train_exercise_cls_accuracy, precision, recall, f1))
+            # throughput
+            throughput = len(self.data_loader.dataset) / epoch_time  # samples/sec
+            print(f"Throughput: {throughput:.1f} samples/s")
+            #
+            # elapsed time
+            hours, rem = divmod(epoch_time, 3600)
+            minutes, seconds = divmod(rem, 60)
+            print(f"Elapsed time per epoch: {int(hours)}h {int(minutes)}m {seconds:.1f}s")
             #
             # Scheduler
             if self.args.use_scheduler:

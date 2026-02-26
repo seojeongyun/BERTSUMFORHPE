@@ -113,7 +113,7 @@ if __name__ == '__main__':
     parser.add_argument("-train_steps", default=100, type=int)
     parser.add_argument("-recall_eval", type=str2bool, nargs='?',const=True,default=False)
 
-    parser.add_argument("-device_id", default='1', type=int)
+    parser.add_argument("-device_id", default='0', type=int)
     parser.add_argument('-visible_gpus', default='1', type=str)
     parser.add_argument('-gpu_ranks', default='1', type=str)
     parser.add_argument('-log_file', default=None)

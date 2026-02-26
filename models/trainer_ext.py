@@ -264,9 +264,25 @@ class Trainer(object):
             total_samples_seen = 0
             start = time.time()
 
-            for step, (videos, label) in enumerate(self.data_loader): # 5194 steps
+            for step, (videos, exercise_name, conditions) in enumerate(self.data_loader): # 5194 steps
                 step_start = time.time()
                 #
+                B = len(exercise_name)
+                D = self.config.CLASS_NUM + self.config.NUM_CONDITIONS
+
+                # 1) GPU¿¡¼­ label »ý¼º
+                label = torch.zeros((B, D), device=self.device, dtype=torch.float32)
+
+                # 2) exercise one-hot (raw¿¡¼­ 22 »©¼­ 0~40À¸·Î)
+                ex_idx = torch.tensor(exercise_name, dtype=torch.long, device=self.device) - 22
+                label[torch.arange(B, device=self.device), ex_idx] = 1.0
+
+                # 3) condition Ã¤¿ì±â (raw condition_num¿¡¼­ 22 »©¼­ global index·Î)
+                #    True -> 0.0, False -> 1.0
+                for b, conds in enumerate(conditions):
+                    for condition_num, flag in conds:
+                        label[b, int(condition_num) - 22] = 0.0 if flag else 1.0
+
                 label = label.to(self.device, non_blocking=True).float()
                 output = self.embedder(videos)
                 #
@@ -338,7 +354,7 @@ class Trainer(object):
 
                 step_end = time.time()
                 step_time = step_end - step_start
-                # print(f"[Step {step}/{len(self.data_loader)}] Step Time: {step_time:.4f} sec")
+                print(f"[Step {step}/{len(self.data_loader)}] Step Time: {step_time:.4f} sec")
             #
             end = time.time()
             epoch_time = end - start

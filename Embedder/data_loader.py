@@ -39,27 +39,7 @@ class Video_Loader(Dataset):
 
     def collate_fn(self, batch):
         videos, exercise_name, conditions = zip(*batch)
-        exercise_name = torch.tensor(exercise_name) - 22
-        B = len(batch)
-        label = torch.zeros((B, config.NUM_CONDITIONS + config.CLASS_NUM), dtype=torch.float)
-        label[torch.arange(B), exercise_name] = 1.0
-
-        #
-        row_idx_list, col_idx_list, val_list = [], [], []
-        for b, conds in enumerate(conditions):
-            for condition_num, flag in conds:
-                row_idx_list.append(b)
-                col_idx_list.append(condition_num-22)
-                val_list.append(0.0 if flag else 1.0)
-
-        if row_idx_list:
-            rr = torch.tensor(row_idx_list, dtype=torch.long)
-            cc = torch.tensor(col_idx_list, dtype=torch.long)
-            vv = torch.tensor(val_list, dtype=torch.float32)
-            label.index_put_((rr, cc), vv, accumulate=False)
-
-        return videos, label
-        # return videos, exercise_name
+        return videos, exercise_name, conditions
 
 if __name__ == '__main__':
     loader = Video_Loader(config)

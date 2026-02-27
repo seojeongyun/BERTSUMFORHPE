@@ -7,11 +7,24 @@ from models.neural import MultiHeadedAttention, PositionwiseFeedForward
 
 
 class Classifier(nn.Module):
-    def __init__(self, hidden_size):
+    def __init__(self, hidden_size, args):
         super(Classifier, self).__init__()
         # ver 1
-        self.linear = nn.Linear(hidden_size, int(hidden_size / 2))
-        self.classifier =nn.Linear(int(hidden_size / 2) ,41+97)
+        self.args = args
+        if self.args.decouple_mode == 'Shared':
+            self.shared = nn.Linear(hidden_size, 256)
+
+        elif self.args.decouple_mode == 'Full':
+            self.exercise_linear = nn.Linear(hidden_size, 256)
+            self.conditions_linear = nn.Linear(hidden_size, 256)
+
+        else:
+            raise ValueError(f"Unknown decouple_mode: {self.args.decouple_mode}")
+        #
+        self.exercise_classifier =nn.Linear(256 ,41)
+        self.conditions_classifier = nn.Linear(256, 97)
+        #
+
         self.act = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
         # ver 2
@@ -20,22 +33,22 @@ class Classifier(nn.Module):
         # self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
-        # ver 1
-        # attention_weights = torch.softmax(
-        #     self.attention(x), dim=1 #  self.attention(self.sigmoid(x)).shape = [1,336,1]
-        # ) # [1, 336, 1]
-        # pooled = (x * attention_weights).sum(dim=1)
-        x = x[:,0,:] # [1,1,768]
-        x = self.linear(x)
-        predict = self.classifier(self.act(x))
-        # predict = self.sigmoid(predict)
+        # [BS,SEQ_LEN,DIM]
+        cls = x[:,0,:]
+        if self.args.decouple_mode == 'Full':
+            exercise_out = self.exercise_linear(cls)
+            pred_exercise = self.exercise_classifier(self.act(exercise_out))
+            #
+            condition_out = self.conditions_linear(cls)
+            pred_conditions = self.conditions_classifier(self.act(condition_out))
 
-        # attention_scores = torch.matmul(x, self.attention_weights)
-        # attention_weights =  F.softmax(attention_scores,dim=1)
-        # weighted_sum = torch.sum(x*attention_weights.unsqueeze(-1), dim=1)
-        # predict = self.classifier(weighted_sum)
-        # predict = self.sigmoid(predict)
-        return predict
+        else:
+            shared_feat = self.act(self.shared(cls))
+            pred_exercise = self.exercise_classifier(shared_feat)
+            pred_conditions = self.conditions_classifier(shared_feat)
+
+        #
+        return pred_exercise, pred_conditions
 
 
 class PositionalEncoding(nn.Module):

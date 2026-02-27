@@ -140,10 +140,10 @@ if __name__ == '__main__':
     parser.add_argument("-bert_random_init", default=False)
     parser.add_argument("-embedder_random_init", default=False)
 
-    parser.add_argument("-loss_type", default='BCEWithLogitsLoss',
-                        type=str) # ['BCEWithLogitsLoss', 'MultiLabelSoftMarginLoss']
+    parser.add_argument("-cond_loss_weight", default=2.0,type=float)
     parser.add_argument("-weighted_loss", default=True, type=bool)
-    parser.add_argument("-weighted_loss_value", default=18, type=int)
+    parser.add_argument("-weighted_loss_value", default=10, type=int)
+    parser.add_argument("-decouple_mode", default='Shared', type=str) # Full, Shared
 
     args = parser.parse_args()
     #
@@ -154,6 +154,8 @@ if __name__ == '__main__':
     print('NUM of ENCoder Layer:{}'.format(args.ext_layers))
     print('lr:{}'.format(args.lr))
     print('load bert ckpt:{}'.format(bool(args.train_from)))
+    print('weighted_loss_value:{}'.format(args.weighted_loss_value))
+    print('decouple_mode:{}'.format(args.decouple_mode))
     print('####### CONFIG #######')
     print()
     if args.log_file is not None:

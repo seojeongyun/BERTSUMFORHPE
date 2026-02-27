@@ -192,7 +192,7 @@ class ExtSummarizer(nn.Module):
                                      num_hidden_layers=args.ext_layers, num_attention_heads=args.ext_heads,
                                      intermediate_size=args.ext_ff_size)
             self.bert.model = BertModel(bert_config).to(device)
-            self.ext_layer = Classifier(self.bert.model.config.hidden_size).to(device)
+            self.ext_layer = Classifier(self.bert.model.config.hidden_size, self.args).to(device)
 
         if (args.max_pos > 512):
             my_pos_embeddings = nn.Embedding(args.max_pos, self.bert.model.config.hidden_size)

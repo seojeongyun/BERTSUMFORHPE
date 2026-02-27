@@ -119,27 +119,8 @@ class Trainer(object):
         # 260226 multi label classification (not use weighted loss)
         # self.loss = torch.nn.MultiLabelSoftMarginLoss()
         #
-        if self.args.loss_type == 'BCEWithLogitsLoss':
-            if self.args.weighted_loss:
-                D = self.config.CLASS_NUM + self.config.NUM_CONDITIONS
-                C = self.config.CLASS_NUM
-                weight = self.args.weighted_loss_value
-
-                pos_weight = torch.ones(D, device=self.device)
-                pos_weight[:C] = 1.0
-                pos_weight[C:] = weight
-
-                self.loss = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-                print(f"[Loss Setup] Weighted BCEWithLogitsLoss activated (pos_weight={weight}).")
-
-            else:
-                self.loss = torch.nn.BCEWithLogitsLoss()
-                print("[Loss Setup] Standard BCEWithLogitsLoss activated (no class weighting).")
-
-        else:
-            self.loss = torch.nn.MultiLabelSoftMarginLoss()
-            print("[Loss Setup] MultiLabelSoftMarginLoss activated (no class weighting).")
-                #
+        self.exercise_loss, self.conditions_loss = self.get_loss()
+        #
         if self.args.emb_mode == 'RELATIVE_BASIS' or self.args.emb_mode == 'BASIS':
             self.preweights = torch.load(self.config.PRETRAINED_EMB_PATH)
             self.pre_weights = nn.Embedding.from_pretrained(self.preweights['weight'], freeze=True).to(self.device)
@@ -152,6 +133,23 @@ class Trainer(object):
         if model:
             self.model.train()
 
+    def get_loss(self):
+        exercise_loss = torch.nn.CrossEntropyLoss()
+        print("[Exercise Loss Setup] CrossEntropyLoss.")
+        if self.args.weighted_loss:
+            weight = self.args.weighted_loss_value
+            pos_weight = torch.ones(self.config.NUM_CONDITIONS, device=self.device)
+            pos_weight[:] = weight
+            conditions_loss = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+            #
+            print(f"[Conditions Loss Setup] Weighted BCEWithLogitsLoss activated (pos_weight={weight}).")
+
+        else:
+            conditions_loss = torch.nn.BCEWithLogitsLoss()
+            print("[Conditions Loss Setup] Standard BCEWithLogitsLoss activated (no class weighting).")
+            #
+        return exercise_loss, conditions_loss
+    #
     def get_condition_vocab(self):
         import pickle
 
@@ -272,7 +270,7 @@ class Trainer(object):
     def train(self, device, train_steps, valid_iter_fct=None, valid_steps=-1):
         logger.info("Start training...")        #
         for epoch in range(self.train_epoch):
-            print("============== [Model: TRAIN_MODE] TRAIN START ==============")
+            print("\n============== [{}][Model: TRAIN_MODE] TRAIN START ==============".format(epoch))
             self.model.train()
             self.embedder.train()
             #
@@ -287,76 +285,86 @@ class Trainer(object):
             total_samples_seen = 0
             start = time.time()
 
-            for step, (videos, exercise_name, conditions) in enumerate(self.data_loader): # 5194 steps
+            for step, (videos, exercise_name, conditions) in enumerate(self.data_loader):
                 step_start = time.time()
                 #
                 B = len(exercise_name)
-                D = self.config.CLASS_NUM + self.config.NUM_CONDITIONS
+                D = self.config.NUM_CONDITIONS
 
-                label = torch.zeros((B, D), device=self.device, dtype=torch.float32)
+                # exercise target
+                ex_idx = torch.tensor(exercise_name, dtype=torch.long, device=self.device) - 22  # [B]
 
-                ex_idx = torch.tensor(exercise_name, dtype=torch.long, device=self.device) - 22
-                label[torch.arange(B, device=self.device), ex_idx] = 1.0
+                # condition label: [B, D]
+                cond_label = torch.zeros((B, D), device=self.device, dtype=torch.float32)
 
-                flat = [(b, int(c) - 22, 0.0 if f else 1.0)
+                flat = [(b, (int(c) - 22) - self.config.CLASS_NUM, 0.0 if f else 1.0)
                         for b, conds in enumerate(conditions)
                         for c, f in conds]
                 if flat:
                     rr, cc, vv = zip(*flat)
+
+                    if step == 0:
+                        cc_cpu = torch.tensor(cc)  # ? ÀÌÁ¦ cc´Â python tuple
+                        assert cc_cpu.min().item() >= 0 and cc_cpu.max().item() < D, \
+                            f"Condition index out of range: [{cc_cpu.min().item()}, {cc_cpu.max().item()}], D={D}"
+
                     rr = torch.tensor(rr, device=self.device)
                     cc = torch.tensor(cc, device=self.device)
                     vv = torch.tensor(vv, device=self.device, dtype=torch.float32)
-                    label[rr, cc] = vv
+                    cond_label[rr, cc] = vv
 
+                # forward
                 output = self.embedder(videos)
-                #
                 input_embs, segs, pad_mask = self.emb_(output)
-                sent_scores = self.model(input_embs, segs, pad_mask)
+                ex_logits, cond_logits = self.model(input_embs, segs, pad_mask)
 
-                # Calculate LOSS
-                loss = self.loss(sent_scores, label)
-
+                # loss (CE + BCEWithLogits)
+                loss = self.exercise_loss(ex_logits, ex_idx) + self.args.cond_loss_weight * self.conditions_loss(cond_logits, cond_label)
                 Train_total_loss += loss.item()
 
-                # Calculate Exercise Classification ACC
-                pred_exercise = torch.argmax(sent_scores[:, :self.config.CLASS_NUM], dim=1)
-                target_exercise = torch.argmax(label[:, :self.config.CLASS_NUM], dim=1)
-                exercise_classification_acc +=  (pred_exercise == target_exercise).sum().item()
+                # exercise acc
+                pred_ex = torch.argmax(ex_logits, dim=1)
+                exercise_classification_acc += (pred_ex == ex_idx).sum().item()
 
-                # Calculate Condition Classification Precision, Recall
-                pred_condition = torch.sigmoid(sent_scores[:, self.config.CLASS_NUM:]) > 0.5
-                target_condition = (label[:, self.config.CLASS_NUM:] > 0.5)
+                # condition metrics
+                pred_cond = (torch.sigmoid(cond_logits) > 0.5)  # bool
+                tgt_cond = (cond_label > 0.5)  # bool
 
                 # DEBUG
                 # if step == 0:
-                #     p_exercise, t_exercise = self.ex_int2str[int(pred_exercise[0])+22], self.ex_int2str[
-                #         int(target_exercise[0])+22]
-                #     print('Expected: {}, \nPredicted: {}'.format(p_exercise, t_exercise))
+                #     # ---- Exercise ----
+                #     pred0 = int(pred_ex[0].item())  # 0~40
+                #     tgt0 = int(ex_idx[0].item())  # 0~40
                 #
-                #     p_condition, t_condition = pred_condition[0].nonzero(as_tuple=True)[0], \
-                #     target_condition[0].nonzero(as_tuple=True)[0]
-                #     p_condition, t_condition = p_condition + self.config.CLASS_NUM, t_condition + self.config.CLASS_NUM
-                #     p_condition_lst, t_condition_lst = [], []
-                #     for i in range(len(p_condition)):
-                #         p_condition_lst.append(self.cond_int2str[int(p_condition[i]) + 22])
-                #     for i in range(len(t_condition)):
-                #         t_condition_lst.append(self.cond_int2str[int(t_condition[i]) + 22])
+                #     pred_raw = pred0 + 22
+                #     tgt_raw = tgt0 + 22
                 #
-                #     print('Expected: {}\nPredicted: {}'.format(
-                #         ', '.join(t_condition_lst),
-                #         ', '.join(p_condition_lst)
-                #     ))
+                #     print(f"Expected: {self.ex_int2str[tgt_raw]}\nPredicted: {self.ex_int2str[pred_raw]}")
+                #
+                #     # ---- Condition ----
+                #     p_local = pred_cond[0].nonzero(as_tuple=True)[0]  # 0~NUM_COND-1
+                #     t_local = tgt_cond[0].nonzero(as_tuple=True)[0]
+                #
+                #     # local -> raw (63~159)
+                #     p_raw = p_local + (self.config.CLASS_NUM + 22)  # +63
+                #     t_raw = t_local + (self.config.CLASS_NUM + 22)
+                #
+                #     p_condition_lst = [self.cond_int2str[int(idx.item())] for idx in p_raw]
+                #     t_condition_lst = [self.cond_int2str[int(idx.item())] for idx in t_raw]
+                #
+                #     print("Expected: " + ", ".join(t_condition_lst))
+                #     print("Predicted: " + ", ".join(p_condition_lst))
 
-                tp = (pred_condition & target_condition).sum().item()
-                fp = (pred_condition & ~target_condition).sum().item()
-                fn = (~pred_condition & target_condition).sum().item()
+                tp = (pred_cond & tgt_cond).sum().item()
+                fp = (pred_cond & ~tgt_cond).sum().item()
+                fn = (~pred_cond & tgt_cond).sum().item()
 
                 condition_tp += tp
                 condition_fp += fp
                 condition_fn += fn
 
                 #
-                batch_size = label.size(0)
+                batch_size = cond_label.size(0)
                 total_samples_seen += batch_size
                 if step % 1000 == 0 and step != 0:
                     ex_acc = 100.0 * exercise_classification_acc / total_samples_seen
@@ -385,7 +393,7 @@ class Trainer(object):
             #
             # Metric
             avg_train_loss = Train_total_loss / len(self.data_loader)
-            Train_exercise_cls_accuracy = 100. * exercise_classification_acc / len(self.data_loader.dataset)
+            Train_exercise_cls_accuracy = 100.0 * exercise_classification_acc / total_samples_seen
             precision = condition_tp / (condition_tp + condition_fp + 1e-8)
             recall = condition_tp / (condition_tp + condition_fn + 1e-8)
             f1 = 2 * precision * recall / (precision + recall + 1e-8)
@@ -409,7 +417,7 @@ class Trainer(object):
                 print("current_lr: {:.6f}".format(lr_from_optimizer))
 
             if self.args.mode == 'train-valid':
-                print("============== [Model: EVAL_MODE] VALID START ==============")
+                print("\n============== [Model: EVAL_MODE] VALID START ==============")
                 self.model.eval()
                 self.embedder.eval()
 
@@ -419,68 +427,81 @@ class Trainer(object):
                     condition_tp = 0
                     condition_fp = 0
                     condition_fn = 0
+                    #
+                    valid_samples_seen = 0
                     for step, (videos, exercise_name, conditions) in enumerate(self.valid_data_loader):
+
                         B = len(exercise_name)
-                        D = self.config.CLASS_NUM + self.config.NUM_CONDITIONS
+                        D = self.config.NUM_CONDITIONS
 
-                        label = torch.zeros((B, D), device=self.device, dtype=torch.float32)
-
+                        # ---- exercise target ----
                         ex_idx = torch.tensor(exercise_name, dtype=torch.long, device=self.device) - 22
-                        label[torch.arange(B, device=self.device), ex_idx] = 1.0
 
-                        flat = [(b, int(c) - 22, 0.0 if f else 1.0)
+                        # ---- condition label ----
+                        cond_label = torch.zeros((B, D), device=self.device, dtype=torch.float32)
+
+                        flat = [(b, (int(c) - 22) - self.config.CLASS_NUM, 0.0 if f else 1.0)
                                 for b, conds in enumerate(conditions)
                                 for c, f in conds]
+
                         if flat:
                             rr, cc, vv = zip(*flat)
+
+                            if step == 0:
+                                cc_cpu = torch.tensor(cc)  # ? ÀÌÁ¦ cc´Â python tuple
+                                assert cc_cpu.min().item() >= 0 and cc_cpu.max().item() < D, \
+                                    f"Condition index out of range: [{cc_cpu.min().item()}, {cc_cpu.max().item()}], D={D}"
+
                             rr = torch.tensor(rr, device=self.device)
                             cc = torch.tensor(cc, device=self.device)
                             vv = torch.tensor(vv, device=self.device, dtype=torch.float32)
-                            label[rr, cc] = vv
+                            cond_label[rr, cc] = vv
 
+                        # ---- forward ----
                         output = self.embedder(videos)
-                        #
                         input_embs, segs, pad_mask = self.emb_(output)
-                        sent_scores = self.model(input_embs, segs, pad_mask)
-                        #
-                        # Calculate Exercise Classification ACC
-                        pred_exercise = torch.argmax(sent_scores[:, :self.config.CLASS_NUM], dim=1)
-                        target_exercise = torch.argmax(label[:, :self.config.CLASS_NUM], dim=1)
-                        exercise_classification_acc += (pred_exercise == target_exercise).sum().item()
+                        ex_logits, cond_logits = self.model(input_embs, segs, pad_mask)
 
-                        # Calculate Condition Classification Precision, Recall
-                        pred_condition = torch.sigmoid(sent_scores[:, self.config.CLASS_NUM:]) > 0.5
-                        target_condition = (label[:, self.config.CLASS_NUM:] > 0.5)
+                        # ---- Exercise ACC ----
+                        pred_ex = torch.argmax(ex_logits, dim=1)
+                        exercise_classification_acc += (pred_ex == ex_idx).sum().item()
 
-                        # DEBUG
+                        # ---- Condition metrics ----
+                        pred_cond = torch.sigmoid(cond_logits) > 0.5
+                        tgt_cond = cond_label > 0.5
+
                         if step == 0:
-                            p_exercise, t_exercise = self.ex_int2str[int(pred_exercise[0]) + 22], self.ex_int2str[
-                                int(target_exercise[0]) + 22]
-                            print('Expected: {}, \nPredicted: {}'.format(p_exercise, t_exercise))
+                            # ---- Exercise debug ----
+                            pred_raw = int(pred_ex[0].item()) + 22
+                            tgt_raw = int(ex_idx[0].item()) + 22
 
-                            p_condition, t_condition = pred_condition[0].nonzero(as_tuple=True)[0], \
-                                target_condition[0].nonzero(as_tuple=True)[0]
-                            p_condition, t_condition = p_condition + self.config.CLASS_NUM, t_condition + self.config.CLASS_NUM
-                            p_condition_lst, t_condition_lst = [], []
-                            for i in range(len(p_condition)):
-                                p_condition_lst.append(self.cond_int2str[int(p_condition[i]) + 22])
-                            for i in range(len(t_condition)):
-                                t_condition_lst.append(self.cond_int2str[int(t_condition[i]) + 22])
+                            print(f"Expected: {self.ex_int2str[tgt_raw]}\nPredicted: {self.ex_int2str[pred_raw]}")
 
-                            print('Expected: {}\nPredicted: {}'.format(
-                                ', '.join(t_condition_lst),
-                                ', '.join(p_condition_lst)
-                            ))
+                            # ---- Condition debug ----
+                            p_local = pred_cond[0].nonzero(as_tuple=True)[0]
+                            t_local = tgt_cond[0].nonzero(as_tuple=True)[0]
 
-                        tp = (pred_condition & target_condition).sum().item()
-                        fp = (pred_condition & ~target_condition).sum().item()
-                        fn = (~pred_condition & target_condition).sum().item()
+                            # local -> raw = local + CLASS_NUM + 22
+                            p_raw = p_local + (self.config.CLASS_NUM + 22)
+                            t_raw = t_local + (self.config.CLASS_NUM + 22)
+
+                            p_condition_lst = [self.cond_int2str[int(idx.item())] for idx in p_raw]
+                            t_condition_lst = [self.cond_int2str[int(idx.item())] for idx in t_raw]
+
+                            print("Expected: " + ", ".join(t_condition_lst))
+                            print("Predicted: " + ", ".join(p_condition_lst))
+
+                        tp = (pred_cond & tgt_cond).sum().item()
+                        fp = (pred_cond & ~tgt_cond).sum().item()
+                        fn = (~pred_cond & tgt_cond).sum().item()
 
                         condition_tp += tp
                         condition_fp += fp
                         condition_fn += fn
 
-                    Valid_exercise_cls_accuracy = 100. * exercise_classification_acc / len(self.valid_data_loader.dataset)
+                        batch_size = cond_label.size(0)
+                        valid_samples_seen += batch_size
+                    Valid_exercise_cls_accuracy = 100.0 * exercise_classification_acc / valid_samples_seen
                     precision = condition_tp / (condition_tp + condition_fp + 1e-8)
                     recall = condition_tp / (condition_tp + condition_fn + 1e-8)
                     f1 = 2 * precision * recall / (precision + recall + 1e-8)

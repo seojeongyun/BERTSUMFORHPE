@@ -81,7 +81,7 @@ OUT_FEAT = int(config.PRETRAINED_PATH.split('/')[6].split()[2].split(':')[-1])
 NUM_LAYER = int(config.PRETRAINED_PATH.split('/')[6].split()[1].split(':')[-1])
 ACTIV = config.PRETRAINED_PATH.split('/')[6].split()[3].split(':')[-1]
 #
-config.IN_FEAT = 4
+config.IN_FEAT = 4 # or 4+97
 config.OUT_FEAT = OUT_FEAT
 config.NUM_LAYER = NUM_LAYER # EMB_LAYER
 config.ACTIV = ACTIV

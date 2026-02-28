@@ -120,6 +120,7 @@ class Trainer(object):
         # self.loss = torch.nn.MultiLabelSoftMarginLoss()
         #
         self.exercise_loss, self.conditions_loss = self.get_loss()
+        self.threshold = self.args.threshold
         #
         if self.args.emb_mode == 'RELATIVE_BASIS' or self.args.emb_mode == 'BASIS':
             self.preweights = torch.load(self.config.PRETRAINED_EMB_PATH)
@@ -327,8 +328,8 @@ class Trainer(object):
                 exercise_classification_acc += (pred_ex == ex_idx).sum().item()
 
                 # condition metrics
-                pred_cond = (torch.sigmoid(cond_logits) > 0.5)  # bool
-                tgt_cond = (cond_label > 0.5)  # bool
+                pred_cond = (torch.sigmoid(cond_logits) > self.threshold)  # bool
+                tgt_cond = (cond_label > self.threshold)  # bool
 
                 # DEBUG
                 # if step == 0:
@@ -467,8 +468,8 @@ class Trainer(object):
                         exercise_classification_acc += (pred_ex == ex_idx).sum().item()
 
                         # ---- Condition metrics ----
-                        pred_cond = torch.sigmoid(cond_logits) > 0.5
-                        tgt_cond = cond_label > 0.5
+                        pred_cond = torch.sigmoid(cond_logits) > self.threshold
+                        tgt_cond = cond_label > self.threshold
 
                         if step == 0:
                             # ---- Exercise debug ----

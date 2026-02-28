@@ -32,10 +32,6 @@ class Classifier(nn.Module):
 
         self.act = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
-        # ver 2
-        # self.attention_weights = nn.Parameter(torch.rand(hidden_size))
-        # self.classifier = nn.Linear(hidden_size, num_classes)
-        # self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         # [BS,SEQ_LEN,DIM]

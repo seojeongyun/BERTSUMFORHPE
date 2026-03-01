@@ -141,12 +141,12 @@ class Trainer(object):
             weight = self.args.weighted_loss_value
             pos_weight = torch.ones(self.config.NUM_CONDITIONS, device=self.device)
             pos_weight[:] = weight
-            conditions_loss = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+            conditions_loss = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight, reduction='none')
             #
             print(f"[Conditions Loss Setup] Weighted BCEWithLogitsLoss activated (pos_weight={weight}).")
 
         else:
-            conditions_loss = torch.nn.BCEWithLogitsLoss()
+            conditions_loss = torch.nn.BCEWithLogitsLoss(reduction='none')
             print("[Conditions Loss Setup] Standard BCEWithLogitsLoss activated (no class weighting).")
             #
         return exercise_loss, conditions_loss
@@ -297,7 +297,7 @@ class Trainer(object):
 
                 # condition label: [B, D]
                 cond_label = torch.zeros((B, D), device=self.device, dtype=torch.float32)
-
+                cond_mask = torch.zeros((B, D), device=self.device, dtype=torch.bool)
                 flat = [(b, (int(c) - 22) - self.config.CLASS_NUM, 0.0 if f else 1.0)
                         for b, conds in enumerate(conditions)
                         for c, f in conds]
@@ -313,6 +313,7 @@ class Trainer(object):
                     cc = torch.tensor(cc, device=self.device)
                     vv = torch.tensor(vv, device=self.device, dtype=torch.float32)
                     cond_label[rr, cc] = vv
+                    cond_mask[rr,cc] = True
 
                 # forward
                 output = self.embedder(videos)
@@ -320,7 +321,11 @@ class Trainer(object):
                 ex_logits, cond_logits = self.model(input_embs, segs, pad_mask)
 
                 # loss (CE + BCEWithLogits)
-                loss = self.exercise_loss(ex_logits, ex_idx) + self.args.cond_loss_weight * self.conditions_loss(cond_logits, cond_label)
+                exercise_loss = self.exercise_loss(ex_logits, ex_idx)
+                condition_loss = self.args.cond_loss_weight * self.conditions_loss(cond_logits, cond_label)
+                cond_mask_f = cond_mask.float()
+                condition_loss = (condition_loss * cond_mask_f).sum() / (cond_mask_f.sum() + 1e-8)
+                loss = exercise_loss + condition_loss
                 Train_total_loss += loss.item()
 
                 # exercise acc
@@ -328,8 +333,9 @@ class Trainer(object):
                 exercise_classification_acc += (pred_ex == ex_idx).sum().item()
 
                 # condition metrics
-                pred_cond = (torch.sigmoid(cond_logits) > self.threshold)  # bool
-                tgt_cond = (cond_label > self.threshold)  # bool
+                mask_bool = cond_mask.bool()
+                pred_cond = (torch.sigmoid(cond_logits) > self.threshold) & mask_bool
+                tgt_cond = (cond_label > self.threshold) & mask_bool
 
                 # DEBUG
                 # if step == 0:
@@ -440,7 +446,7 @@ class Trainer(object):
 
                         # ---- condition label ----
                         cond_label = torch.zeros((B, D), device=self.device, dtype=torch.float32)
-
+                        cond_mask = torch.zeros((B, D), device=self.device, dtype=torch.bool)
                         flat = [(b, (int(c) - 22) - self.config.CLASS_NUM, 0.0 if f else 1.0)
                                 for b, conds in enumerate(conditions)
                                 for c, f in conds]
@@ -457,7 +463,7 @@ class Trainer(object):
                             cc = torch.tensor(cc, device=self.device)
                             vv = torch.tensor(vv, device=self.device, dtype=torch.float32)
                             cond_label[rr, cc] = vv
-
+                            cond_mask[rr,cc] = True
                         # ---- forward ----
                         output = self.embedder(videos)
                         input_embs, segs, pad_mask = self.emb_(output)
@@ -468,8 +474,9 @@ class Trainer(object):
                         exercise_classification_acc += (pred_ex == ex_idx).sum().item()
 
                         # ---- Condition metrics ----
-                        pred_cond = torch.sigmoid(cond_logits) > self.threshold
-                        tgt_cond = cond_label > self.threshold
+                        mask_bool = cond_mask.bool()
+                        pred_cond = (torch.sigmoid(cond_logits) > self.threshold) & mask_bool
+                        tgt_cond = (cond_label > self.threshold) & mask_bool
 
                         if step == 0:
                             # ---- Exercise debug ----
@@ -479,8 +486,9 @@ class Trainer(object):
                             print(f"Expected: {self.ex_int2str[tgt_raw]}\nPredicted: {self.ex_int2str[pred_raw]}")
 
                             # ---- Condition debug ----
-                            p_local = pred_cond[0].nonzero(as_tuple=True)[0]
-                            t_local = tgt_cond[0].nonzero(as_tuple=True)[0]
+                            mask0 = cond_mask[0].bool()  # [D]
+                            p_local = (pred_cond[0] & mask0).nonzero(as_tuple=True)[0]
+                            t_local = (tgt_cond[0] & mask0).nonzero(as_tuple=True)[0]
 
                             # local -> raw = local + CLASS_NUM + 22
                             p_raw = p_local + (self.config.CLASS_NUM + 22)

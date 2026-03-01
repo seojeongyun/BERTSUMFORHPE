@@ -26,9 +26,16 @@ config.SEED = 478
 
 # DATA
 # AT SERVER 1
-config.T_DATA_PATH = '/storage/jysuh/BERTSUMFORHPE/embedder_dataset/multi_label_classification_train.pkl'
+config.IN_FEAT = 4 # 4 or 4+5
+#
+if config.IN_FEAT == 4: # or 4+97
+    config.T_DATA_PATH = '/storage/jysuh/BERTSUMFORHPE/embedder_dataset/multi_label_classification_train.pkl'
+    config.V_DATA_PATH = '/storage/jysuh/BERTSUMFORHPE/embedder_dataset/multi_label_classification_valid.pkl'
+elif config.IN_FEAT == 4+5:
+    config.T_DATA_PATH = '/storage/jysuh/BERTSUMFORHPE/embedder_dataset/MultiLabelCls_train_5dim.pkl'
+    config.V_DATA_PATH = '/storage/jysuh/BERTSUMFORHPE/embedder_dataset/MultiLabelCls_valid_5dim.pkl'
+#
 config.T_VOCAB_PATH = '/storage/jysuh/BERTSUMFORHPE/embedder_dataset/train_vocab.pkl'
-config.V_DATA_PATH = '/storage/jysuh/BERTSUMFORHPE/embedder_dataset/multi_label_classification_valid.pkl'
 config.V_VOCAB_PATH = '/storage/jysuh/BERTSUMFORHPE/embedder_dataset/valid_vocab.pkl'
 config.CONDITION_VOCAB_PATH = '/storage/jysuh/BERTSUMFORHPE/embedder_dataset/condition_vocab.pkl'
 
@@ -81,7 +88,7 @@ OUT_FEAT = int(config.PRETRAINED_PATH.split('/')[6].split()[2].split(':')[-1])
 NUM_LAYER = int(config.PRETRAINED_PATH.split('/')[6].split()[1].split(':')[-1])
 ACTIV = config.PRETRAINED_PATH.split('/')[6].split()[3].split(':')[-1]
 #
-config.IN_FEAT = 4 # or 4+97
+
 config.OUT_FEAT = OUT_FEAT
 config.NUM_LAYER = NUM_LAYER # EMB_LAYER
 config.ACTIV = ACTIV
@@ -102,6 +109,7 @@ elif config.EMB_MODE == 'RELATIVE':
 print()
 print('####### CONFIG #######')
 print('BATCH: {}'.format(config.BATCH_SIZE))
+print('IN_FEAT: {}dim'.format(config.IN_FEAT))
 print('BASIS_FREEZE: {}'.format(config.BASIS_FREEZE))
 print('RELATIVE_FREEZE: {}'.format(config.RELATIVE_FREEZE))
 print('EMB_MODE: {}'.format(config.EMB_MODE))

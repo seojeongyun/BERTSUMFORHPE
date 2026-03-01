@@ -140,11 +140,11 @@ if __name__ == '__main__':
     parser.add_argument("-bert_random_init", default=False)
     parser.add_argument("-embedder_random_init", default=False)
 
-    parser.add_argument("-cond_loss_weight", default=2.0,type=float)
+    parser.add_argument("-cond_loss_weight", default=1.0,type=float)
     parser.add_argument("-weighted_loss", default=True, type=bool)
-    parser.add_argument("-weighted_loss_value", default=10, type=int)
+    parser.add_argument("-weighted_loss_value", default=2, type=int)
     parser.add_argument("-decouple_mode", default='Full', type=str) # Full, Shared
-    parser.add_argument("-threshold", default=0.6, type=float)
+    parser.add_argument("-threshold", default=0.8, type=float)
 
 
     args = parser.parse_args()

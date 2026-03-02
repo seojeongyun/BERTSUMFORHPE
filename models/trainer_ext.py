@@ -179,90 +179,141 @@ class Trainer(object):
         return video_loader
 
     def emb_(self, data):
+        """
+        Convert embedder output into BERT-style input embeddings.
 
-        # data: [Batch, Frames, Joints, Dim]
+        Args:
+            data: Tensor of shape [B, F, J, D]
+                  B = batch size
+                  F = number of frames
+                  J = number of joints per frame
+                  D = embedding dimension (e.g., 768)
+
+        Returns:
+            embeddings:   Tensor [B, S, D]
+            seg_emb:      Tensor [B, S, D]
+            padding_mask: Tensor broadcastable to attention shape
+        """
+
+        # Unpack dimensions
         B, F, J, D = data.shape
         device = data.device
 
-        # -----------------------------------------------------------
-        # 1. Inputs Embedding ���� (Vectorization)
-        # -----------------------------------------------------------
+        # ===========================================================
+        # 1. Build input token embeddings
+        #
+        # For each frame:
+        #   prepend one [SEP] token
+        # Then flatten all frames into a single sequence.
+        # Finally prepend one [CLS] token at the beginning.
+        #
+        # Final sequence length:
+        #   S = 1 + F * (1 + J)
+        # ===========================================================
 
-        # [SEP] ���� ����: [1, 1, 1, D] -> [B, F, 1, D]
+        # Get [SEP] embedding vector of shape [D]
         sep_vec = self.pre_weights(self.model.sep_id)
+
+        # Expand to shape [B, F, 1, D]
         sep_expanded = sep_vec.view(1, 1, 1, D).expand(B, F, 1, D)
 
-        # [SEP] + [Joints] ����: [B, F, 1+J, D]
+        # Concatenate [SEP] with joint embeddings per frame
+        # Result shape: [B, F, 1 + J, D]
         frames_combined = torch.cat([sep_expanded, data], dim=2)
 
-        # ������ ������ (Flatten): [B, F*(1+J), D]
+        # Flatten frame and token dimensions
+        # Shape: [B, F * (1 + J), D]
         seq_flattened = frames_combined.reshape(B, -1, D)
 
-        # [CLS] ���� ���� (���� ���� ���� ���� ���������� ����)
+        # Add [CLS] token at the beginning
         if hasattr(self.model, 'cls_emb'):
             cls_vec = self.model.cls_emb.to(device)
         else:
-            # cls_emb�� ���� ����(���� ������ ����) 0���� ����
             cls_vec = torch.zeros(D, device=device)
 
         cls_expanded = cls_vec.view(1, 1, D).expand(B, 1, D)
 
-        # ���� ���� ����: [B, 1 + F*(1+J), D]
+        # Final token sequence
+        # Shape: [B, 1 + F * (1 + J), D]
         inputs_embeds = torch.cat([cls_expanded, seq_flattened], dim=1)
 
-        # -----------------------------------------------------------
-        # 2. Segment IDs ���� (Vectorization)
-        # -----------------------------------------------------------
+        # ===========================================================
+        # 2. Build segment embeddings
+        #
+        # Alternate segment IDs per frame:
+        # frame 0 -> 0
+        # frame 1 -> 1
+        # frame 2 -> 0
+        # etc.
+        #
+        # All tokens within the same frame share the same segment ID.
+        # [CLS] token uses segment ID 0.
+        # ===========================================================
 
-        # Frame �� 0, 1 ���� ����: [0, 1, 0, 1...]
+        # Frame pattern: [0, 1, 0, 1, ...]
         frame_pattern = torch.arange(F, device=device) % 2
 
-        # �� ������ �� ���� ����(1+J��)�� ���� ID ����
-        # [F] -> [F, 1+J] -> [F*(1+J)]
+        # Expand per frame to match (1 + J) tokens
+        # Shape: [F * (1 + J)]
         seg_ids_flat = frame_pattern.unsqueeze(-1).expand(F, 1 + J).reshape(-1)
 
-        # �� �� CLS(ID: 0) ���� �� ���� ����
+        # Segment ID for [CLS]
         cls_seg_id = torch.zeros(1, dtype=torch.long, device=device)
+
+        # Full segment IDs for the batch
+        # Shape: [B, S]
         full_seg_ids = torch.cat([cls_seg_id, seg_ids_flat]).unsqueeze(0).expand(B, -1)
 
-        # Segment Embedding ����
+        # Segment embedding lookup
+        # Shape: [B, S, D]
         seg_emb = self.segment_emb(full_seg_ids)
 
-        # -----------------------------------------------------------
-        # 3. Positional Encoding (���� ���� ����)
-        # -----------------------------------------------------------
+        # ===========================================================
+        # 3. Apply positional encoding
+        #
+        # Standard transformer style:
+        #   x_scaled = x * sqrt(D)
+        #   x_pe = x_scaled + positional_encoding
+        #   apply dropout
+        #
+        # Final embedding is:
+        #   inputs + segment + positional
+        # ===========================================================
 
-        # ���� PE �������� ���� ������ �������� ���� �� ��������(unsqueeze ���� ��),
-        # ������ PE�� ����(pe)�� ���� �������� '������ ������ ����'�� ����������.
-        # ���� ����: inputs + seg + pos_enc(inputs)
-
-        # 3-1. Scale & Add PE (inputs_embeds ������ ����)
-        # PE ����: x * sqrt(dim) + pe
+        # Scale input embeddings
         pe_term = inputs_embeds * math.sqrt(self.pos_enc.dim)
 
-        # ������ ������ ���� PE ��������
+        # Add positional encoding
         seq_len = inputs_embeds.size(1)
         pe_term = pe_term + self.pos_enc.pe[:, :seq_len].to(device)
 
-        # Dropout ����
+        # Apply dropout
         pos_emb = self.pos_enc.dropout(pe_term)
 
-        # ���� ���� (���� ���� ���� ����: inputs + seg + pos_output)
+        # Final embedding
         embeddings = inputs_embeds + seg_emb + pos_emb
 
-        # -----------------------------------------------------------
-        # 4. Padding Mask ����
-        # -----------------------------------------------------------
+        # ===========================================================
+        # 4. Build padding mask
+        #
+        # A token is considered padding if its embedding equals pad token embedding.
+        #
+        # mask_src:
+        #   1 for real token
+        #   0 for padding
+        #
+        # Output mask is reshaped for attention usage.
+        # ===========================================================
 
         pad_vec = self.pre_weights(self.model.pad_id)
 
-        # ���� ���� ���� (���� ����)
+        # Identify padding positions
         is_pad = torch.all(inputs_embeds == pad_vec, dim=-1)
 
-        # ������ ���� (1: Real, 0: Pad)
+        # 1 for real token, 0 for pad
         mask_src = (~is_pad).float()
 
-        # ���� ����
+        # Reshape for attention
         mask = rearrange(mask_src, 'b s -> b 1 1 s')
         padding_mask = repeat(mask, 'b 1 1 s -> b 1 new s', new=mask_src.shape[-1])
 

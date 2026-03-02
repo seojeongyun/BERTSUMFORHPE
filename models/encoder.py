@@ -36,7 +36,7 @@ class Classifier(nn.Module):
 
     def forward(self, x, cond_mask):
         # [BS,SEQ_LEN,DIM]
-        tmp = self.tmp(cond_mask)
+        tmp = self.tmp(cond_mask.float())
         cls = x[:,0,:]
         cls = tmp+cls
 

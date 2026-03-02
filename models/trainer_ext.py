@@ -337,7 +337,7 @@ class Trainer(object):
                 pred_cond = (torch.sigmoid(cond_logits) > self.threshold) & mask_bool
                 tgt_cond = (cond_label > self.threshold) & mask_bool
 
-                # DEBUG
+                # DEBUG (before applying masking)
                 # if step == 0:
                 #     # ---- Exercise ----
                 #     pred0 = int(pred_ex[0].item())  # 0~40

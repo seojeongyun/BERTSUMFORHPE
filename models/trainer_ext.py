@@ -419,7 +419,7 @@ class Trainer(object):
             # Scheduler
             if self.args.use_scheduler:
                 self.optim.scheduler.step()
-                # DEBUR - SCHEDULER
+                # DEBUG - SCHEDULER
                 lr_from_optimizer = self.optim.optimizer.param_groups[0]['lr']
                 print("current_lr: {:.6f}".format(lr_from_optimizer))
 
@@ -510,6 +510,7 @@ class Trainer(object):
 
                         batch_size = cond_label.size(0)
                         valid_samples_seen += batch_size
+                    #
                     Valid_exercise_cls_accuracy = 100.0 * exercise_classification_acc / valid_samples_seen
                     precision = condition_tp / (condition_tp + condition_fp + 1e-8)
                     recall = condition_tp / (condition_tp + condition_fn + 1e-8)

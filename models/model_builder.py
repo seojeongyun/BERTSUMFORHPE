@@ -216,9 +216,9 @@ class ExtSummarizer(nn.Module):
         self.register_buffer('cls_emb', torch.zeros(768))
         self.to(device)
 
-    def forward(self, src, segs, mask):
+    def forward(self, src, segs, mask, cond_mask):
         top_vec = self.bert(src, segs, mask)
-        sent_scores = self.ext_layer(top_vec)
+        sent_scores = self.ext_layer(top_vec, cond_mask)
         return sent_scores #, mask_cls
 
 

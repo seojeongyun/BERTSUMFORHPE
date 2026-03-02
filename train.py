@@ -144,7 +144,7 @@ if __name__ == '__main__':
     parser.add_argument("-weighted_loss", default=True, type=bool)
     parser.add_argument("-weighted_loss_value", default=10, type=int)
     parser.add_argument("-decouple_mode", default='Full', type=str) # Full, Shared
-    parser.add_argument("-threshold", default=0.7, type=float)
+    parser.add_argument("-threshold", default=0.9, type=float)
 
 
     args = parser.parse_args()

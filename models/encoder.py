@@ -11,6 +11,7 @@ class Classifier(nn.Module):
         super(Classifier, self).__init__()
         # ver 1
         self.args = args
+        self.tmp = nn.Linear(97, hidden_size)
         if self.args.decouple_mode == 'Shared':
             self.shared_1 = nn.Linear(hidden_size, 512)
             self.shared_2 = nn.Linear(512, 256)
@@ -33,9 +34,12 @@ class Classifier(nn.Module):
         self.act = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
 
-    def forward(self, x):
+    def forward(self, x, cond_mask):
         # [BS,SEQ_LEN,DIM]
+        tmp = self.tmp(cond_mask)
         cls = x[:,0,:]
+        cls = tmp+cls
+
         if self.args.decouple_mode == 'Full':
             exercise_out = self.exercise_linear(cls)
             pred_exercise = self.exercise_classifier(self.act(exercise_out))

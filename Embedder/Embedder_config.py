@@ -10,7 +10,7 @@ config.INIT_RELATIVE = True
 #
 
 # GPU / WORKERS / BATCH
-config.GPUS = '1'
+config.GPUS = '0'
 config.WORKERS = 0
 config.DEVICE = torch.device(f"cuda:{config.GPUS}" if torch.cuda.is_available() else "cpu")
 config.BATCH_SIZE = 32

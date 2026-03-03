@@ -11,7 +11,6 @@ class Classifier(nn.Module):
         super(Classifier, self).__init__()
         # ver 1
         self.args = args
-        self.tmp = nn.Linear(97, hidden_size)
         if self.args.decouple_mode == 'Shared':
             self.shared_1 = nn.Linear(hidden_size, 512)
             self.shared_2 = nn.Linear(512, 256)
@@ -34,17 +33,22 @@ class Classifier(nn.Module):
         self.act = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
 
-    def forward(self, x, cond_mask):
+    def forward(self, x):
         # [BS,SEQ_LEN,DIM]
-        tmp = self.tmp(cond_mask.float())
-        cls = x[:,0,:]
-        cls = tmp+cls
+
+        F = 21
+        J = 20
+        sep_idx = 1 + torch.arange(F, device=x.device) * (J + 1)  # [21]
+        sep_tokens = x[:, sep_idx, :]  # [B, 21, D]
+        sep_sum = sep_tokens.sum(dim=1)  # [B, D]
+
+        cls = x[:, 0, :]
 
         if self.args.decouple_mode == 'Full':
             exercise_out = self.exercise_linear(cls)
             pred_exercise = self.exercise_classifier(self.act(exercise_out))
             #
-            condition_out = self.conditions_linear_1(cls)
+            condition_out = self.conditions_linear_1(sep_sum)
             condition_out = self.conditions_linear_2(self.act(condition_out))
             condition_out = self.conditions_linear_3(self.act(condition_out))
             pred_conditions = self.conditions_classifier(condition_out)

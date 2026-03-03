@@ -91,7 +91,7 @@ if __name__ == '__main__':
     parser.add_argument("-param_init", default=0, type=float)
     parser.add_argument("-param_init_glorot", type=str2bool, nargs='?',const=True,default=True)
     parser.add_argument("-optim", default='adam', type=str)
-    parser.add_argument("-lr", default=5e-4, type=float) # 5e-3 better
+    parser.add_argument("-lr", default=5e-5, type=float) # 5e-3 better
     parser.add_argument("-beta1", default= 0.9, type=float)
     parser.add_argument("-beta2", default=0.999, type=float)
     parser.add_argument("-warmup_steps", default=8000, type=int)
@@ -99,9 +99,9 @@ if __name__ == '__main__':
     parser.add_argument("-warmup_steps_dec", default=8000, type=int)
     parser.add_argument("-max_grad_norm", default=0, type=float)
     # Scheduler
-    parser.add_argument("-use_scheduler", default=True, type=bool)
+    parser.add_argument("-use_scheduler", default=False, type=bool)
     parser.add_argument("-base_lr", default=5e-5)
-    parser.add_argument("-max_lr", default=5e-4)
+    parser.add_argument("-max_lr", default=5e-3) # 5e-4
     parser.add_argument("-step_size_up", default=20, type=int)
     parser.add_argument("-cycle_momentum", default=False)
 
@@ -113,7 +113,7 @@ if __name__ == '__main__':
     parser.add_argument("-train_steps", default=100, type=int)
     parser.add_argument("-recall_eval", type=str2bool, nargs='?',const=True,default=False)
 
-    parser.add_argument("-device_id", default='0', type=int)
+    parser.add_argument("-device_id", default='1', type=int)
     parser.add_argument('-visible_gpus', default='1', type=str)
     parser.add_argument('-gpu_ranks', default='1', type=str)
     parser.add_argument('-log_file', default=None)
@@ -140,9 +140,9 @@ if __name__ == '__main__':
     parser.add_argument("-bert_random_init", default=False)
     parser.add_argument("-embedder_random_init", default=False)
 
-    parser.add_argument("-cond_loss_weight", default=5.0,type=float)
+    parser.add_argument("-cond_loss_weight", default=1.0,type=float)
     parser.add_argument("-weighted_loss", default=True, type=bool)
-    parser.add_argument("-weighted_loss_value", default=1, type=int)
+    parser.add_argument("-weighted_loss_value", default=8, type=int)
     parser.add_argument("-decouple_mode", default='Full', type=str) # Full, Shared
     parser.add_argument("-threshold", default=0.85, type=float)
 

@@ -369,7 +369,7 @@ class Trainer(object):
                 # forward
                 output = self.embedder(videos)
                 input_embs, segs, pad_mask = self.emb_(output)
-                ex_logits, cond_logits = self.model(input_embs, segs, pad_mask, cond_mask)
+                ex_logits, cond_logits = self.model(input_embs, segs, pad_mask)
 
                 # loss (CE + BCEWithLogits)
                 exercise_loss = self.exercise_loss(ex_logits, ex_idx)
@@ -518,7 +518,7 @@ class Trainer(object):
                         # ---- forward ----
                         output = self.embedder(videos)
                         input_embs, segs, pad_mask = self.emb_(output)
-                        ex_logits, cond_logits = self.model(input_embs, segs, pad_mask, cond_mask)
+                        ex_logits, cond_logits = self.model(input_embs, segs, pad_mask)
 
                         # ---- Exercise ACC ----
                         pred_ex = torch.argmax(ex_logits, dim=1)

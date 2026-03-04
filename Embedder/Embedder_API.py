@@ -6,6 +6,8 @@ import yaml
 import pickle
 import random
 import numpy as np
+import torch.nn.functional as F
+import math
 
 from torch import nn
 from tqdm import tqdm
@@ -14,6 +16,7 @@ from types import SimpleNamespace
 from Embedder.Embedder_config import config
 from collections import OrderedDict
 from Embedder.data_loader import Video_Loader
+from others.AverageMeter import AverageMeter
 
 def fix_seed(seed):
     random.seed(seed)
@@ -58,6 +61,21 @@ class Embedder(nn.Module):
             self.atfc = nn.GELU()
         else:
             self.atfc = nn.ReLU()
+        #
+        # Arcface train
+        params = []
+        self.weight = nn.Parameter(torch.empty(self.config.NUM_JOINTS - 2, self.out_features)).to(self.config.DEVICE)
+        params += [self.weight]
+        nn.init.xavier_normal_(self.weight)
+        if self.config.EMB_MODE != 'BASIS':
+            params += list(self.layers.parameters())
+        if self.use_embedding and (not config.BASIS_FREEZE):
+            params += list(self.embedding.parameters())
+
+        self.criterion = nn.CrossEntropyLoss()
+        self.optimizer = torch.optim.AdamW(self.layers.parameters(), lr=5e-4)
+        self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.93)
+        self.losses = AverageMeter()
 
     def get_vocab_path(self):
         if self.mode == 'train' or self.mode == 'train-valid':
@@ -129,7 +147,6 @@ class Embedder(nn.Module):
     def make_layer(self):
         layers = []
         #
-
         if self.num_layer == 2:
             layers.append(nn.Linear(self.in_features, self.out_features//2, bias=True))
             layers.append(nn.Linear(self.out_features//2, self.out_features, bias=False))
@@ -161,7 +178,7 @@ class Embedder(nn.Module):
         joint_token = torch.tensor(joint_token).to(self.config.DEVICE)
         return joint_info, joint_token
 
-    def forward_propagation(self, joint_info, joint_token):
+    def forward_propagation(self, joint_info, joint_token, mode):
         BS = joint_info.size(0)
         if self.use_embedding:
             emb_output_J_tokens = self.embedding(joint_token)  # [BS, OUT_FEAT]
@@ -203,18 +220,56 @@ class Embedder(nn.Module):
             pad_emb = self.embedding(torch.zeros(pad_mask.sum(), dtype=torch.long, device=self.config.DEVICE))
             embedding_vec[pad_mask] = pad_emb
 
-        return embedding_vec
+        # ArcFace
+        if mode == 'train':
+            s, m = self.config.ARCFACE_PARAM['s'], self.config.ARCFACE_PARAM['m']
+            #
+            cosine = F.linear(F.normalize(embedding_vec), F.normalize(self.weight))
+            # cos(theta + m)
+            sine = torch.sqrt(1.0 - torch.pow(cosine, 2))
+            if m is not None and s is not None:
+                self.cos_m = math.cos(m)
+                self.sin_m = math.sin(m)
+                self.th = math.cos(math.pi - m)
+                self.mm = math.sin(math.pi - m) * m
 
-    def forward(self, videos):
+            phi = cosine * self.cos_m - sine * self.sin_m
+            phi = torch.where((cosine - self.th) > 0, phi, cosine - self.mm)
+
+            # one_hot = torch.zeros(cosine.size(), device='cuda' if torch.cuda.is_available() else 'cpu')
+            one_hot = torch.zeros_like(cosine)
+            joint_token -= 2
+            one_hot.scatter_(1, joint_token.view(-1, 1), 1)
+            output = (one_hot * phi) + ((1.0 - one_hot) * cosine)
+            output = output * s
+
+        else:
+            output = -1
+
+        return output, embedding_vec
+
+    def forward(self, videos, mode):
         # consider batch
         vec_for_a_frame = []
 
         for frame_idx in range(self.config.MAX_FRAMES):
             vec_for_a_joint = []
+            #
+            if mode == 'train':
+                loss = torch.tensor(0.0, device=self.config.DEVICE)
+            #
             for i, joint_name in enumerate(self.config.JOINTS_NAME): # consider only joint(2~21), not pad, cls token (0,1)
                 joint_info, joint_token = self.preprocess_joint_info(videos, frame_idx, joint_name)
-                vec = self.forward_propagation(joint_info, joint_token)
+                arcface_out, vec = self.forward_propagation(joint_info, joint_token, mode)
                 vec_for_a_joint.append(vec)
+                if mode == 'train':
+                    loss += self.criterion(arcface_out, joint_token)
+            if mode == 'train':
+                loss /= len(self.config.JOINTS_NAME)
+                self.optimizer.zero_grad()
+                loss.backward()
+                self.losses.update(loss.item(), videos.size(0))
+                self.optimizer.step()
             a_frame = torch.stack(vec_for_a_joint, dim=1) # stacked shape: [BS, 20, 768]
             vec_for_a_frame.append(a_frame)
         videos = torch.stack(vec_for_a_frame, dim=1) # BS, MAX_FRAME, 20, 768

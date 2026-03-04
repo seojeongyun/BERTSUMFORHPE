@@ -344,6 +344,8 @@ class Trainer(object):
             pos_cnt = 0.0
             mask_cnt = 0.0
             #
+            self.Embedder.losses.reset()
+            #
             start = time.time()
 
             for step, (videos, exercise_name, conditions) in enumerate(self.data_loader):
@@ -376,7 +378,7 @@ class Trainer(object):
                     cond_mask[rr,cc] = True
 
                 # forward
-                output = self.embedder(videos)
+                output = self.embedder(videos, mode='train')
                 input_embs, segs, pad_mask = self.emb_(output)
                 ex_logits, cond_logits = self.model(input_embs, segs, pad_mask)
 
@@ -447,6 +449,7 @@ class Trainer(object):
                     f1 = 2 * precision * recall / (precision + recall + 1e-8)
 
                     print(f"[TRAIN][Step {step}] "
+                          f"Arc_Loss: {self.Embedder.losses:.4f} | "
                           f"Loss: {Train_total_loss / (step + 1):.4f} | "
                           f"Exercise_ACC: {ex_acc:.2f}% | "
                           f"P: {precision:.4f} | "
@@ -487,6 +490,7 @@ class Trainer(object):
             print(f"Elapsed time per epoch: {int(hours)}h {int(minutes)}m {seconds:.1f}s")
             #
             # Scheduler
+            self.Embedder.scheduler.step()
             if self.args.use_scheduler:
                 self.optim.scheduler.step()
                 # DEBUG - SCHEDULER
@@ -525,7 +529,7 @@ class Trainer(object):
                             rr, cc, vv = zip(*flat)
 
                             if step == 0:
-                                cc_cpu = torch.tensor(cc)  # ? ÀÌÁ¦ cc´Â python tuple
+                                cc_cpu = torch.tensor(cc)  #
                                 assert cc_cpu.min().item() >= 0 and cc_cpu.max().item() < D, \
                                     f"Condition index out of range: [{cc_cpu.min().item()}, {cc_cpu.max().item()}], D={D}"
 
@@ -535,7 +539,7 @@ class Trainer(object):
                             cond_label[rr, cc] = vv
                             cond_mask[rr,cc] = True
                         # ---- forward ----
-                        output = self.embedder(videos)
+                        output = self.embedder(videos, mode='valid')
                         input_embs, segs, pad_mask = self.emb_(output)
                         ex_logits, cond_logits = self.model(input_embs, segs, pad_mask)
 

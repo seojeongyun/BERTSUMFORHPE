@@ -1,3 +1,4 @@
+import re
 import torch
 from types import SimpleNamespace
 
@@ -10,7 +11,7 @@ config.INIT_RELATIVE = True
 #
 
 # GPU / WORKERS / BATCH
-config.GPUS = '0'
+config.GPUS = '1'
 config.WORKERS = 0
 config.DEVICE = torch.device(f"cuda:{config.GPUS}" if torch.cuda.is_available() else "cpu")
 config.BATCH_SIZE = 32
@@ -61,18 +62,24 @@ config.JOINTS_NAME = [
 
 # PRETRAINED MODEL PATH
 config.EMB_INIT = True # True: initialization, False: pretrained model load
+config.ARCFACE_PARAM = {}
 if config.EMB_MODE == 'RELATIVE_BASIS':
     config.USE_EMBEDDING = True
     # RELATIVE PATH
     config.PRETRAINED_PATH = '/storage/jysuh/BERTSUMFORHPE/checkpoint/jy_weight/[Basis+Relative] LAYERS_NUM:4 DIM:768 ACT:GELU s:10 m:0.1/metric_learning_model.pth.tar'
     # nn.EMBEDDING PATH
     config.PRETRAINED_EMB_PATH = '/storage/jysuh/BERTSUMFORHPE/checkpoint/jy_weight/[Basis+Relative] LAYERS_NUM:4 DIM:768 ACT:GELU s:10 m:0.1/nn_embedding_model.pt'
+    # ArcFace param
+    config.ARCFACE_PARAM['m'] = float(config.PRETRAINED_PATH.split('/')[-2].split()[-1].split(':')[-1])
+    config.ARCFACE_PARAM['s'] = int(config.PRETRAINED_PATH.split('/')[-2].split()[-2].split(':')[-1])
 
 elif config.EMB_MODE == 'RELATIVE':
     config.USE_EMBEDDING = False
     ## CHANGE PATH) LAYER_NUM = {2,4,6}
     config.PRETRAINED_PATH = '/storage/jysuh/BERTSUMFORHPE/checkpoint/jy_weight/[Relative] LAYERS_NUM:6 DIM:768 ACT:GELU s:10 m:0.1/metric_learning_model.pth.tar'
     # config.PRETRAINED_EMB_PATH = '/storage/jysuh/BERTSUMFORHPE/checkpoint/jy_weight/[Relative] LAYERS_NUM:4 DIM:768 ACT:GELU s:10 m:0.1/nn_embedding_model.pt'
+    config.ARCFACE_PARAM['m'] = float(config.PRETRAINED_PATH.split('/')[-2].split()[-1].split(':')[-1])
+    config.ARCFACE_PARAM['s'] = int(config.PRETRAINED_PATH.split('/')[-2].split()[-2].split(':')[-1])
 
 ## 260225
 elif config.EMB_MODE == 'BASIS':

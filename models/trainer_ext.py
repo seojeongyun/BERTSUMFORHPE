@@ -335,6 +335,10 @@ class Trainer(object):
             condition_fn = 0
             #
             total_samples_seen = 0
+            #
+            pos_cnt = 0.0
+            mask_cnt = 0.0
+            #
             start = time.time()
 
             for step, (videos, exercise_name, conditions) in enumerate(self.data_loader):
@@ -413,6 +417,7 @@ class Trainer(object):
                 #     print("Expected: " + ", ".join(t_condition_lst))
                 #     print("Predicted: " + ", ".join(p_condition_lst))
 
+                # Calc tp, fp, fn
                 tp = (pred_cond & tgt_cond).sum().item()
                 fp = (pred_cond & ~tgt_cond).sum().item()
                 fn = (~pred_cond & tgt_cond).sum().item()
@@ -424,6 +429,12 @@ class Trainer(object):
                 #
                 batch_size = cond_label.size(0)
                 total_samples_seen += batch_size
+                #
+
+                # cond_label: [B,D], cond_mask: [B,D] (bool)
+                pos_cnt += (cond_label[cond_mask] > 0.5).sum().item()
+                mask_cnt += cond_mask.sum().item()
+
                 if step % 1000 == 0 and step != 0:
                     ex_acc = 100.0 * exercise_classification_acc / total_samples_seen
                     precision = condition_tp / (condition_tp + condition_fp + 1e-8)
@@ -445,6 +456,9 @@ class Trainer(object):
                 step_end = time.time()
                 step_time = step_end - step_start
                 # print(f"[Step {step}/{len(self.data_loader)}] Step Time: {step_time:.4f} sec")
+            #
+            pos_rate = pos_cnt / (mask_cnt + 1e-8)
+            print("mask-pos-rate:", pos_rate)
             #
             end = time.time()
             epoch_time = end - start

@@ -235,8 +235,10 @@ class Trainer(object):
 
         # Final token sequence
         # Shape: [B, 1 + F * (1 + J), D]
-        inputs_embeds = torch.cat([cls_expanded, seq_flattened], dim=1)
-
+        if attach_cls_token_to_end_of_seqlen:
+            inputs_embeds = torch.cat([cls_expanded, seq_flattened , cls_expanded], dim=1)
+        else:
+            inputs_embeds = torch.cat([cls_expanded, seq_flattened], dim=1)
         # ===========================================================
         # 2. Build segment embeddings
         #
@@ -262,7 +264,10 @@ class Trainer(object):
 
         # Full segment IDs for the batch
         # Shape: [B, S]
-        full_seg_ids = torch.cat([cls_seg_id, seg_ids_flat]).unsqueeze(0).expand(B, -1)
+        if attach_cls_token_to_end_of_seqlen:
+            full_seg_ids = torch.cat([cls_seg_id, seg_ids_flat, cls_seg_id]).unsqueeze(0).expand(B, -1)
+        else:
+            full_seg_ids = torch.cat([cls_seg_id, seg_ids_flat]).unsqueeze(0).expand(B, -1)
 
         # Segment embedding lookup
         # Shape: [B, S, D]

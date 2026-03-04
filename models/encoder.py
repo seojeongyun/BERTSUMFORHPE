@@ -42,19 +42,20 @@ class Classifier(nn.Module):
         sep_tokens = x[:, sep_idx, :]  # [B, 21, D]
         sep_sum = sep_tokens.sum(dim=1)  # [B, D]
 
-        cls = x[:, 0, :]
-
+        first_cls = x[:, 0, :]
+        last_cls = x[:, -1, :]
         if self.args.decouple_mode == 'Full':
-            exercise_out = self.exercise_linear(cls)
+            exercise_out = self.exercise_linear(first_cls)
             pred_exercise = self.exercise_classifier(self.act(exercise_out))
             #
-            condition_out = self.conditions_linear_1(sep_sum)
+            condition_out = self.conditions_linear_1(last_cls)
             condition_out = self.conditions_linear_2(self.act(condition_out))
             condition_out = self.conditions_linear_3(self.act(condition_out))
             pred_conditions = self.conditions_classifier(condition_out)
 
+        # will be removed
         else:
-            shared_feat = self.shared_1(cls)
+            shared_feat = self.shared_1(first_cls)
             shared_feat = self.shared_2(self.act(shared_feat))
             pred_exercise = self.exercise_classifier(self.act(shared_feat))
             pred_conditions = self.conditions_classifier(shared_feat)

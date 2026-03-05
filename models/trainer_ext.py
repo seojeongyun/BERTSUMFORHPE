@@ -344,9 +344,6 @@ class Trainer(object):
             pos_cnt = 0.0
             mask_cnt = 0.0
             #
-            if self.config.USE_ARCFACE:
-                self.embedder.losses.reset()
-            #
             start = time.time()
 
             for step, (videos, exercise_name, conditions) in enumerate(self.data_loader):
@@ -379,7 +376,7 @@ class Trainer(object):
                     cond_mask[rr,cc] = True
 
                 # forward
-                output = self.embedder(videos, mode='train')
+                output = self.embedder(videos)
                 input_embs, segs, pad_mask = self.emb_(output)
                 ex_logits, cond_logits = self.model(input_embs, segs, pad_mask)
 
@@ -449,21 +446,12 @@ class Trainer(object):
                     recall = condition_tp / (condition_tp + condition_fn + 1e-8)
                     f1 = 2 * precision * recall / (precision + recall + 1e-8)
 
-                    if self.config.USE_ARCFACE:
-                        print(f"[TRAIN][Step {step}] "
-                              f"Arc_Loss: {self.embedder.losses:.4f} | "
-                              f"Loss: {Train_total_loss / (step + 1):.4f} | "
-                              f"Exercise_ACC: {ex_acc:.2f}% | "
-                              f"P: {precision:.4f} | "
-                              f"R: {recall:.4f} | "
-                              f"F1: {f1:.4f}")
-                    else:
-                        print(f"[TRAIN][Step {step}] "
-                              f"Loss: {Train_total_loss / (step + 1):.4f} | "
-                              f"Exercise_ACC: {ex_acc:.2f}% | "
-                              f"P: {precision:.4f} | "
-                              f"R: {recall:.4f} | "
-                              f"F1: {f1:.4f}")
+                    print(f"[TRAIN][Step {step}] "
+                          f"Loss: {Train_total_loss / (step + 1):.4f} | "
+                          f"Exercise_ACC: {ex_acc:.2f}% | "
+                          f"P: {precision:.4f} | "
+                          f"R: {recall:.4f} | "
+                          f"F1: {f1:.4f}")
                 #
                 # UPDATE
                 self.optim.optimizer.zero_grad()
@@ -499,8 +487,6 @@ class Trainer(object):
             print(f"Elapsed time per epoch: {int(hours)}h {int(minutes)}m {seconds:.1f}s")
             #
             # Scheduler
-            if self.config.USE_ARCFACE:
-                self.embedder.scheduler.step()
             if self.args.use_scheduler:
                 self.optim.scheduler.step()
                 # DEBUG - SCHEDULER
@@ -539,7 +525,7 @@ class Trainer(object):
                             rr, cc, vv = zip(*flat)
 
                             if step == 0:
-                                cc_cpu = torch.tensor(cc)  #
+                                cc_cpu = torch.tensor(cc)  # ? ÀÌÁ¦ cc´Â python tuple
                                 assert cc_cpu.min().item() >= 0 and cc_cpu.max().item() < D, \
                                     f"Condition index out of range: [{cc_cpu.min().item()}, {cc_cpu.max().item()}], D={D}"
 
@@ -549,7 +535,7 @@ class Trainer(object):
                             cond_label[rr, cc] = vv
                             cond_mask[rr,cc] = True
                         # ---- forward ----
-                        output = self.embedder(videos, mode='valid')
+                        output = self.embedder(videos)
                         input_embs, segs, pad_mask = self.emb_(output)
                         ex_logits, cond_logits = self.model(input_embs, segs, pad_mask)
 

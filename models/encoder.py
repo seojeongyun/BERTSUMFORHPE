@@ -11,10 +11,10 @@ class Classifier(nn.Module):
         super(Classifier, self).__init__()
         # ver 1
         self.args = args
+
         if self.args.decouple_mode == 'Shared':
             self.shared_1 = nn.Linear(hidden_size, 512)
             self.shared_2 = nn.Linear(512, 256)
-
 
         elif self.args.decouple_mode == 'Full':
             self.exercise_linear = nn.Linear(hidden_size, 256)
@@ -36,14 +36,9 @@ class Classifier(nn.Module):
     def forward(self, x):
         # [BS,SEQ_LEN,DIM]
 
-        F = 21
-        J = 20
-        sep_idx = 1 + torch.arange(F, device=x.device) * (J + 1)  # [21]
-        sep_tokens = x[:, sep_idx, :]  # [B, 21, D]
-        sep_sum = sep_tokens.sum(dim=1)  # [B, D]
-
         first_cls = x[:, 0, :]
         last_cls = x[:, -1, :]
+
         if self.args.decouple_mode == 'Full':
             exercise_out = self.exercise_linear(first_cls)
             pred_exercise = self.exercise_classifier(self.act(exercise_out))

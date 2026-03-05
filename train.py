@@ -113,7 +113,7 @@ if __name__ == '__main__':
     parser.add_argument("-train_steps", default=100, type=int)
     parser.add_argument("-recall_eval", type=str2bool, nargs='?',const=True,default=False)
 
-    parser.add_argument("-device_id", default=config.GPUS, type=int)
+    parser.add_argument("-device_id", default='0', type=int)
     parser.add_argument('-visible_gpus', default='1', type=str)
     parser.add_argument('-gpu_ranks', default='1', type=str)
     parser.add_argument('-log_file', default=None)
@@ -140,17 +140,18 @@ if __name__ == '__main__':
     parser.add_argument("-bert_random_init", default=False)
     parser.add_argument("-embedder_random_init", default=False)
 
-    parser.add_argument("-cond_loss_weight", default=1.5,type=float)
+    parser.add_argument("-cond_loss_weight", default=1.3,type=float)
     parser.add_argument("-weighted_loss", default=True, type=bool)
     parser.add_argument("-weighted_loss_value", default=1, type=int)
     parser.add_argument("-decouple_mode", default='Full', type=str) # Full, Shared
     parser.add_argument("-threshold", default=0.5, type=float)
-    parser.add_argument("-attach_cls_token_to_end_of_seqlen", default=False, type=bool)
+    parser.add_argument("-attach_cls_token_to_end_of_seqlen", default=True, type=bool)
 
 
     args = parser.parse_args()
     #
     fix_seed(args.seed)
+    config.GPUS = args.device_id
     #
     args.world_size = 0
     print('NUM of ENCoder Layer:{}'.format(args.ext_layers))

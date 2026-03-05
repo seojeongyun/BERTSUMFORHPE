@@ -6,12 +6,12 @@ from types import SimpleNamespace
 config = SimpleNamespace()
 
 #
-config.INIT_nnEmb = False
-config.INIT_RELATIVE = True
+config.EMB_INIT = False # True: initialization, False: pretrained model load
+config.USE_ARCFACE = False
 #
 
 # GPU / WORKERS / BATCH
-config.GPUS = '1'
+config.GPUS = '0'
 config.WORKERS = 0
 config.DEVICE = torch.device(f"cuda:{config.GPUS}" if torch.cuda.is_available() else "cpu")
 config.BATCH_SIZE = 32
@@ -61,7 +61,6 @@ config.JOINTS_NAME = [
     ]
 
 # PRETRAINED MODEL PATH
-config.EMB_INIT = True # True: initialization, False: pretrained model load
 config.ARCFACE_PARAM = {}
 if config.EMB_MODE == 'RELATIVE_BASIS':
     config.USE_EMBEDDING = True

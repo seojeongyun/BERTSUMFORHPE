@@ -221,7 +221,7 @@ class Embedder(nn.Module):
             embedding_vec[pad_mask] = pad_emb
 
         # ArcFace
-        if mode == 'train':
+        if mode == 'train' and self.config.USE_ARCFACE:
             s, m = self.config.ARCFACE_PARAM['s'], self.config.ARCFACE_PARAM['m']
             #
             cosine = F.linear(F.normalize(embedding_vec), F.normalize(self.weight))
@@ -255,16 +255,16 @@ class Embedder(nn.Module):
         for frame_idx in range(self.config.MAX_FRAMES):
             vec_for_a_joint = []
             #
-            if mode == 'train':
+            if mode == 'train' and self.config.USE_ARCFACE:
                 loss = torch.tensor(0.0, device=self.config.DEVICE)
             #
             for i, joint_name in enumerate(self.config.JOINTS_NAME): # consider only joint(2~21), not pad, cls token (0,1)
                 joint_info, joint_token = self.preprocess_joint_info(videos, frame_idx, joint_name)
                 arcface_out, vec = self.forward_propagation(joint_info, joint_token, mode)
                 vec_for_a_joint.append(vec)
-                if mode == 'train':
+                if mode == 'train' and self.config.USE_ARCFACE:
                     loss += self.criterion(arcface_out, joint_token)
-            if mode == 'train':
+            if mode == 'train' and self.config.USE_ARCFACE:
                 loss /= len(self.config.JOINTS_NAME)
                 self.optimizer.zero_grad()
                 loss.backward()

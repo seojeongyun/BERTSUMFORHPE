@@ -344,7 +344,8 @@ class Trainer(object):
             pos_cnt = 0.0
             mask_cnt = 0.0
             #
-            self.Embedder.losses.reset()
+            if self.config.USE_ARCFACE:
+                self.embedder.losses.reset()
             #
             start = time.time()
 
@@ -448,13 +449,21 @@ class Trainer(object):
                     recall = condition_tp / (condition_tp + condition_fn + 1e-8)
                     f1 = 2 * precision * recall / (precision + recall + 1e-8)
 
-                    print(f"[TRAIN][Step {step}] "
-                          f"Arc_Loss: {self.Embedder.losses:.4f} | "
-                          f"Loss: {Train_total_loss / (step + 1):.4f} | "
-                          f"Exercise_ACC: {ex_acc:.2f}% | "
-                          f"P: {precision:.4f} | "
-                          f"R: {recall:.4f} | "
-                          f"F1: {f1:.4f}")
+                    if self.config.USE_ARCFACE:
+                        print(f"[TRAIN][Step {step}] "
+                              f"Arc_Loss: {self.embedder.losses:.4f} | "
+                              f"Loss: {Train_total_loss / (step + 1):.4f} | "
+                              f"Exercise_ACC: {ex_acc:.2f}% | "
+                              f"P: {precision:.4f} | "
+                              f"R: {recall:.4f} | "
+                              f"F1: {f1:.4f}")
+                    else:
+                        print(f"[TRAIN][Step {step}] "
+                              f"Loss: {Train_total_loss / (step + 1):.4f} | "
+                              f"Exercise_ACC: {ex_acc:.2f}% | "
+                              f"P: {precision:.4f} | "
+                              f"R: {recall:.4f} | "
+                              f"F1: {f1:.4f}")
                 #
                 # UPDATE
                 self.optim.optimizer.zero_grad()
@@ -490,7 +499,8 @@ class Trainer(object):
             print(f"Elapsed time per epoch: {int(hours)}h {int(minutes)}m {seconds:.1f}s")
             #
             # Scheduler
-            self.Embedder.scheduler.step()
+            if self.config.USE_ARCFACE:
+                self.embedder.scheduler.step()
             if self.args.use_scheduler:
                 self.optim.scheduler.step()
                 # DEBUG - SCHEDULER

@@ -104,10 +104,10 @@ class Trainer(object):
         self.device = torch.device('cuda:{}'.format(args.device_id))
         #
         self.video_dataset = Video_Loader(config=self.config, mode=self.args.mode)
-        self.data_loader = self.get_dataloader(self.video_dataset)
+        self.data_loader = self.get_dataloader(self.video_dataset, mode='train')
         if self.args.mode == 'train-valid':
             self.video_dataset = Video_Loader(config=self.config, mode='validate')
-            self.valid_data_loader = self.get_dataloader(self.video_dataset)
+            self.valid_data_loader = self.get_dataloader(self.video_dataset, mode='valid')
 
         self.embedder = Embedder(self.config, mode=self.args.mode).to(self.device)
         self.condition_vocab, self.exercise_vocab = self.get_condition_vocab()
@@ -167,11 +167,16 @@ class Trainer(object):
 
         return cond_int2str, ex_int2str
 
-    def get_dataloader(self, dataset):
+    def get_dataloader(self, dataset, mode):
+        if mode == 'train':
+            shuffle = True
+        elif mode == 'valid':
+            shuffle = False
+
         video_loader = torch.utils.data.DataLoader(
             dataset,
             batch_size=self.config.BATCH_SIZE,
-            shuffle=True,
+            shuffle=shuffle,
             num_workers=self.config.WORKERS,
             pin_memory=True,
             collate_fn=self.video_dataset.collate_fn)

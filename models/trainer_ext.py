@@ -171,7 +171,8 @@ class Trainer(object):
         if mode == 'train':
             shuffle = True
         elif mode == 'valid':
-            shuffle = False
+            # shuffle = False
+            shuffle = True
 
         video_loader = torch.utils.data.DataLoader(
             dataset,
@@ -387,10 +388,10 @@ class Trainer(object):
 
                 # loss (CE + BCEWithLogits)
                 exercise_loss = self.exercise_loss(ex_logits, ex_idx)
-                condition_loss = self.args.cond_loss_weight * self.conditions_loss(cond_logits, cond_label)
+                condition_loss = self.conditions_loss(cond_logits, cond_label)
                 cond_mask_f = cond_mask.float()
                 condition_loss = (condition_loss * cond_mask_f).sum() / (cond_mask_f.sum() + 1e-8)
-                loss = exercise_loss + condition_loss
+                loss = self.args.ex_loss_weight * exercise_loss + self.args.cond_loss_weight * condition_loss
                 Train_total_loss += loss.item()
 
                 # exercise acc

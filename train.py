@@ -140,11 +140,13 @@ if __name__ == '__main__':
     parser.add_argument("-bert_random_init", default=False)
     parser.add_argument("-embedder_random_init", default=False)
 
-    parser.add_argument("-cond_loss_weight", default=1.3,type=float)
+    parser.add_argument("-cond_loss_weight", default=1.5,type=float)
+    parser.add_argument("-ex_loss_weight", default=0.7, type=float)
+
     parser.add_argument("-weighted_loss", default=True, type=bool)
-    parser.add_argument("-weighted_loss_value", default=1, type=int)
+    parser.add_argument("-weighted_loss_value", default=1.15, type=float)
     parser.add_argument("-decouple_mode", default='Full', type=str) # Full, Shared
-    parser.add_argument("-threshold", default=0.5, type=float)
+    parser.add_argument("-threshold", default=0.7, type=float)
     parser.add_argument("-attach_cls_token_to_end_of_seqlen", default=True, type=bool)
 
 
@@ -161,6 +163,7 @@ if __name__ == '__main__':
     print('decouple_mode:{}'.format(args.decouple_mode))
     print('cond_loss_weight:{}'.format(args.cond_loss_weight))
     print('threshold:{}'.format(args.threshold))
+    print('attach_cls_token_to_end_of_seqlen:{}'.format(args.attach_cls_token_to_end_of_seqlen))
     print('####### CONFIG #######')
     print()
     if args.log_file is not None:

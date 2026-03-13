@@ -140,8 +140,8 @@ if __name__ == '__main__':
     parser.add_argument("-bert_random_init", default=False)
     parser.add_argument("-embedder_random_init", default=False)
 
-    parser.add_argument("-cond_loss_weight", default=5.0,type=float)
-    parser.add_argument("-ex_loss_weight", default=0.2, type=float)
+    parser.add_argument("-cond_loss_weight", default=1.5,type=float)
+    parser.add_argument("-ex_loss_weight", default=0.5, type=float)
 
     parser.add_argument("-weighted_loss", default=True, type=bool)
     parser.add_argument("-weighted_loss_value", default=1.3, type=float)

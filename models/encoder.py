@@ -43,7 +43,7 @@ class Classifier(nn.Module):
             exercise_out = self.exercise_linear(first_cls)
             pred_exercise = self.exercise_classifier(self.act(exercise_out))
             #
-            condition_out = self.conditions_linear_1(last_cls)
+            condition_out = self.conditions_linear_1(first_cls)
             condition_out = self.conditions_linear_2(self.act(condition_out))
             condition_out = self.conditions_linear_3(self.act(condition_out))
             pred_conditions = self.conditions_classifier(condition_out)

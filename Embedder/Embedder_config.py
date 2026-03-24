@@ -5,7 +5,7 @@ from types import SimpleNamespace
 config = SimpleNamespace()
 
 #
-config.EMB_INIT = True # True: initialization, False: pretrained model load
+config.EMB_INIT = False # True: initialization, False: pretrained model load
 #
 
 # GPU / WORKERS / BATCH

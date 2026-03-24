@@ -145,9 +145,8 @@ if __name__ == '__main__':
 
     parser.add_argument("-weighted_loss", default=True, type=bool)
     parser.add_argument("-weighted_loss_value", default=1.3, type=float)
-    parser.add_argument("-decouple_mode", default='Full', type=str) # Full, Shared
     parser.add_argument("-threshold", default=0.7, type=float)
-    parser.add_argument("-attach_cls_token_to_end_of_seqlen", default=True, type=bool)
+    parser.add_argument("-attach_cls_token_to_end_of_seqlen", default=False, type=bool)
 
 
     args = parser.parse_args()

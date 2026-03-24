@@ -12,49 +12,32 @@ class Classifier(nn.Module):
         # ver 1
         self.args = args
 
-        if self.args.decouple_mode == 'Shared':
-            self.shared_1 = nn.Linear(hidden_size, 512)
-            self.shared_2 = nn.Linear(512, 256)
-
-        elif self.args.decouple_mode == 'Full':
-            self.exercise_linear = nn.Linear(hidden_size, 256)
-
-            self.conditions_linear_1 = nn.Linear(hidden_size, 1024)
-            self.conditions_linear_2 = nn.Linear(1024, 512)
-            self.conditions_linear_3 = nn.Linear(512, 256)
-
-        else:
-            raise ValueError(f"Unknown decouple_mode: {self.args.decouple_mode}")
-        #
+        self.exercise_linear = nn.Linear(hidden_size, 256)
         self.exercise_classifier =nn.Linear(256 ,41)
+
+        self.conditions_linear = nn.Linear(hidden_size, 256)
         self.conditions_classifier = nn.Linear(256, 97)
         #
 
         self.act = nn.ReLU()
-        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         # [BS,SEQ_LEN,DIM]
-
         first_cls = x[:, 0, :]
-        last_cls = x[:, -1, :]
 
-        if self.args.decouple_mode == 'Full':
-            exercise_out = self.exercise_linear(first_cls)
-            pred_exercise = self.exercise_classifier(self.act(exercise_out))
-            #
-            condition_out = self.conditions_linear_1(first_cls)
-            condition_out = self.conditions_linear_2(self.act(condition_out))
-            condition_out = self.conditions_linear_3(self.act(condition_out))
-            pred_conditions = self.conditions_classifier(condition_out)
-
-        # will be removed
+        if self.args.attach_cls_token_to_end_of_seqlen:
+            last_cls = x[:, -1, :]
+            exercise_cls = first_cls
+            condition_cls = last_cls
         else:
-            shared_feat = self.shared_1(first_cls)
-            shared_feat = self.shared_2(self.act(shared_feat))
-            pred_exercise = self.exercise_classifier(self.act(shared_feat))
-            pred_conditions = self.conditions_classifier(shared_feat)
+            exercise_cls = first_cls
+            condition_cls = first_cls
 
+        exercise_out = self.exercise_linear(exercise_cls)
+        pred_exercise = self.exercise_classifier(self.act(exercise_out))
+        #
+        condition_out = self.conditions_linear(condition_cls)
+        pred_conditions = self.conditions_classifier(self.act(condition_out))
         #
         return pred_exercise, pred_conditions
 

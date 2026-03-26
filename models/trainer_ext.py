@@ -338,6 +338,8 @@ class Trainer(object):
             self.embedder.train()
             #
             Train_total_loss = 0
+            Train_exercise_loss = 0
+            Train_arcface_loss = 0
 
             exercise_classification_acc = 0
             #
@@ -351,6 +353,9 @@ class Trainer(object):
             mask_cnt = 0.0
             #
             start = time.time()
+
+            if self.config.USE_ARCFACE:
+                self.embedder.losses.reset()
 
             for step, (videos, exercise_name, conditions) in enumerate(self.data_loader):
                 step_start = time.time()
@@ -382,7 +387,11 @@ class Trainer(object):
                     cond_mask[rr,cc] = True
 
                 # forward
-                output = self.embedder(videos)
+                if self.config.USE_ARCFACE:
+                    output, arcface_loss_sum, arcface_count = self.embedder(videos)
+                else:
+                    output = self.embedder(videos)
+
                 input_embs, segs, pad_mask = self.emb_(output)
                 ex_logits, cond_logits = self.model(input_embs, segs, pad_mask)
 
@@ -392,7 +401,20 @@ class Trainer(object):
                 cond_mask_f = cond_mask.float()
                 condition_loss = (condition_loss * cond_mask_f).sum() / (cond_mask_f.sum() + 1e-8)
                 loss = self.args.ex_loss_weight * exercise_loss + self.args.cond_loss_weight * condition_loss
-                Train_total_loss += loss.item()
+
+                if self.config.USE_ARCFACE:
+                    # arcface_loss /= (len(self.config.JOINTS_NAME) * self.config.MAX_FRAMES) # here
+                    arcface_loss = arcface_loss_sum / (arcface_count + 1e-8)
+                    total_loss = loss + 0.5 * arcface_loss
+
+                else:
+                    total_loss = loss
+
+                Train_total_loss += total_loss.item()
+
+                if self.config.USE_ARCFACE:
+                    Train_exercise_loss += loss.item()
+                    Train_arcface_loss += arcface_loss.item()
 
                 # exercise acc
                 pred_ex = torch.argmax(ex_logits, dim=1)
@@ -451,38 +473,71 @@ class Trainer(object):
                     precision = condition_tp / (condition_tp + condition_fp + 1e-8)
                     recall = condition_tp / (condition_tp + condition_fn + 1e-8)
                     f1 = 2 * precision * recall / (precision + recall + 1e-8)
-
-                    print(f"[TRAIN][Step {step}] "
-                          f"Loss: {Train_total_loss / (step + 1):.4f} | "
-                          f"Exercise_ACC: {ex_acc:.2f}% | "
-                          f"P: {precision:.4f} | "
-                          f"R: {recall:.4f} | "
-                          f"F1: {f1:.4f}")
+                    if self.config.USE_ARCFACE:
+                        print(f"[TRAIN][Step {step}] "
+                              f"Total_Loss: {Train_total_loss / (step + 1):.4f} | "
+                              f"Exercise_Loss: {Train_exercise_loss / (step + 1):.4f} | "
+                              f"Arcface_Loss: {Train_arcface_loss / (step + 1):.4f} | "
+                              f"Exercise_ACC: {ex_acc:.2f}% | "
+                              f"P: {precision:.4f} | "
+                              f"R: {recall:.4f} | "
+                              f"F1: {f1:.4f}")
+                    else:
+                        print(f"[TRAIN][Step {step}] "
+                              f"Loss: {Train_total_loss / (step + 1):.4f} | "
+                              f"Exercise_ACC: {ex_acc:.2f}% | "
+                              f"P: {precision:.4f} | "
+                              f"R: {recall:.4f} | "
+                              f"F1: {f1:.4f}")
                 #
                 # UPDATE
+                if self.config.USE_ARCFACE:
+                    self.embedder.optimizer.zero_grad()
                 self.optim.optimizer.zero_grad()
+
                 loss.backward()
+
+                #
+                if self.config.USE_ARCFACE:
+                    self.embedder.optimizer.step()
                 self.optim.optimizer.step()
 
                 step_end = time.time()
                 step_time = step_end - step_start
                 # print(f"[Step {step}/{len(self.data_loader)}] Step Time: {step_time:.4f} sec")
             #
-            pos_rate = pos_cnt / (mask_cnt + 1e-8)
-            print("mask-pos-rate:", pos_rate)
-            #
             end = time.time()
             epoch_time = end - start
             #
             # Metric
-            avg_train_loss = Train_total_loss / len(self.data_loader)
+            avg_train_loss = Train_total_loss / total_samples_seen
             Train_exercise_cls_accuracy = 100.0 * exercise_classification_acc / total_samples_seen
+            #
+            if self.config.USE_ARCFACE:
+                avg_total_loss = Train_total_loss / total_samples_seen
+                avg_ex_loss = Train_exercise_loss / total_samples_seen
+                avg_arc_loss = Train_arcface_loss / total_samples_seen
+            #
             precision = condition_tp / (condition_tp + condition_fp + 1e-8)
             recall = condition_tp / (condition_tp + condition_fn + 1e-8)
             f1 = 2 * precision * recall / (precision + recall + 1e-8)
             #
-            print('[TRAIN] Epoch: {} Average loss: {:.6f}, Exercise_CLS_Accuracy: {:.2f}%, Condition_CLS_Precision: {:.4f}, Condition_CLS_Recall: {:.4f}, Condition_CLS_F1: {:.4f}'
-                  .format(1 + epoch, avg_train_loss, Train_exercise_cls_accuracy, precision, recall, f1))
+            if self.config.USE_ARCFACE:
+                print(f"[TRAIN][Epoch {1 + epoch}] "
+                      f"Avg_Loss: {avg_total_loss:.6f} | "
+                      f"Exercise_Loss: {avg_ex_loss / (step + 1):.4f} | "
+                      f"Arcface_Loss: {avg_arc_loss / (step + 1):.4f} | "
+                      f"Exercise_ACC: {Train_exercise_cls_accuracy:.2f}% | "
+                      f"P: {precision:.4f} | "
+                      f"R: {recall:.4f} | "
+                      f"F1: {f1:.4f}")
+            else:
+                print(f"[TRAIN][Epoch {1 + epoch}] "
+                      f"Avg_Loss: {avg_train_loss:.6f} | "
+                      f"Exercise_ACC: {Train_exercise_cls_accuracy:.2f}% | "
+                      f"P: {precision:.4f} | "
+                      f"R: {recall:.4f} | "
+                      f"F1: {f1:.4f}")
             # throughput
             throughput = len(self.data_loader.dataset) / epoch_time  # samples/sec
             print(f"Throughput: {throughput:.1f} samples/s")
@@ -493,6 +548,9 @@ class Trainer(object):
             print(f"Elapsed time per epoch: {int(hours)}h {int(minutes)}m {seconds:.1f}s")
             #
             # Scheduler
+            if self.config.USE_ARCFACE:
+                self.embedder.scheduler.step()
+
             if self.args.use_scheduler:
                 self.optim.scheduler.step()
                 # DEBUG - SCHEDULER
@@ -531,7 +589,7 @@ class Trainer(object):
                             rr, cc, vv = zip(*flat)
 
                             if step == 0:
-                                cc_cpu = torch.tensor(cc)  # ? ÀÌÁ¦ cc´Â python tuple
+                                cc_cpu = torch.tensor(cc)  #
                                 assert cc_cpu.min().item() >= 0 and cc_cpu.max().item() < D, \
                                     f"Condition index out of range: [{cc_cpu.min().item()}, {cc_cpu.max().item()}], D={D}"
 
@@ -541,7 +599,10 @@ class Trainer(object):
                             cond_label[rr, cc] = vv
                             cond_mask[rr,cc] = True
                         # ---- forward ----
-                        output = self.embedder(videos)
+                        if self.config.USE_ARCFACE:
+                            output, _, _= self.embedder(videos)
+                        else:
+                            output = self.embedder(videos)
                         input_embs, segs, pad_mask = self.emb_(output)
                         ex_logits, cond_logits = self.model(input_embs, segs, pad_mask)
 
@@ -596,6 +657,35 @@ class Trainer(object):
                         '[VALID] Exercise_CLS_Accuracy: {:.2f}%, Condition_CLS_Precision: {:.4f}, Condition_CLS_Recall: {:.4f}, Condition_CLS_F1: {:.4f}'
                         .format(Valid_exercise_cls_accuracy, precision, recall, f1))
 
+                ckpt = {
+                    'epoch': epoch,
+                    'embedder_state_dict': self.embedder.state_dict(),
+                    'model_state_dict': self.model.state_dict(),
+                    'embedder_optimizer_state_dict': self.embedder.optimizer.state_dict() if self.config.USE_ARCFACE else None,
+                    'model_optimizer_state_dict': self.optim.optimizer.state_dict(),
+                    'embedder_scheduler_state_dict': self.embedder.scheduler.state_dict() if self.config.USE_ARCFACE else None,
+                    'model_scheduler_state_dict': self.optim.scheduler.state_dict() if self.args.use_scheduler else None,
+                }
+                torch.save(ckpt, '/home/jysuh/PycharmProjects/BERTSUMFORHPE (trainable_ver)/multi_cls_model_save/temp_save.pt')
+
+                # Load code
+                # ckpt = torch.load(save_path, map_location=self.device)
+                #
+                # self.embedder.load_state_dict(ckpt['embedder_state_dict'])
+                # self.model.load_state_dict(ckpt['model_state_dict'])
+                #
+                # if self.config.USE_ARCFACE and ckpt['embedder_optimizer_state_dict'] is not None:
+                #     self.embedder.optimizer.load_state_dict(ckpt['embedder_optimizer_state_dict'])
+                #
+                # self.optim.optimizer.load_state_dict(ckpt['model_optimizer_state_dict'])
+                #
+                # if self.config.USE_ARCFACE and ckpt['embedder_scheduler_state_dict'] is not None:
+                #     self.embedder.scheduler.load_state_dict(ckpt['embedder_scheduler_state_dict'])
+                #
+                # if self.args.use_scheduler and ckpt['model_scheduler_state_dict'] is not None:
+                #     self.optim.scheduler.load_state_dict(ckpt['model_scheduler_state_dict'])
+                #
+                # start_epoch = ckpt['epoch'] + 1
 
     def validate(self, video_loader, video_dataset, step=0):
         """Validate model.

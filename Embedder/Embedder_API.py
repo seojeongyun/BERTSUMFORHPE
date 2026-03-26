@@ -6,6 +6,8 @@ import yaml
 import pickle
 import random
 import numpy as np
+import torch.nn.functional as F
+import math
 
 from torch import nn
 from tqdm import tqdm
@@ -14,6 +16,7 @@ from types import SimpleNamespace
 from Embedder.Embedder_config import config
 from collections import OrderedDict
 from Embedder.data_loader import Video_Loader
+from others.AverageMeter import AverageMeter
 
 def fix_seed(seed):
     random.seed(seed)
@@ -53,11 +56,30 @@ class Embedder(nn.Module):
         if not config.EMB_INIT:
             self.load_state_dict_embedding()
             self.load_state_dict_linear()
+        else:
+            print('[NOT LOADED] Embedder and nn.embedding module are not loaded.')
         #
         if self.config.ACTIV == 'GELU':
             self.atfc = nn.GELU()
         else:
             self.atfc = nn.ReLU()
+
+
+        if self.config.USE_ARCFACE:
+            params = []
+            self.weight = nn.Parameter(
+                torch.empty(self.config.NUM_JOINTS - 2, self.out_features, device=self.config.DEVICE))
+            params += [self.weight]
+            nn.init.xavier_normal_(self.weight)
+            if self.config.EMB_MODE != 'BASIS':
+                params += list(self.layers.parameters())
+            if self.use_embedding and (not config.BASIS_FREEZE):
+                params += list(self.embedding.parameters())
+
+            self.criterion = nn.CrossEntropyLoss()
+            self.optimizer = torch.optim.AdamW(params, lr=5e-4)
+            self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.93)
+            self.losses = AverageMeter()
 
     def get_vocab_path(self):
         if self.mode == 'train' or self.mode == 'train-valid':
@@ -203,23 +225,93 @@ class Embedder(nn.Module):
             pad_emb = self.embedding(torch.zeros(pad_mask.sum(), dtype=torch.long, device=self.config.DEVICE))
             embedding_vec[pad_mask] = pad_emb
 
-        return embedding_vec
+        # -------------------------
+        # ArcFace (valid only)
+        # -------------------------
+        arcface_out = None
+        joint_cls_valid = None
+        valid_mask = ~pad_mask
+
+        if self.config.USE_ARCFACE and valid_mask.any():
+            s, m = self.config.ARCFACE_PARAM['s'], self.config.ARCFACE_PARAM['m']
+
+            # filter to valid samples only
+            emb_valid = embedding_vec[valid_mask]  # [N_valid, D]
+            joint_cls_valid = (joint_token[valid_mask] - 2).long()  # [N_valid]
+
+            cosine = F.linear(F.normalize(emb_valid), F.normalize(self.weight))  # [N_valid, C]
+
+            # numerical safety: clamp cosine to avoid sqrt(negative)
+            cosine = cosine.clamp(-1.0 + 1e-7, 1.0 - 1e-7)
+
+            sine = torch.sqrt(1.0 - torch.pow(cosine, 2))
+
+            if m is not None and s is not None:
+                self.cos_m = math.cos(m)
+                self.sin_m = math.sin(m)
+                self.th = math.cos(math.pi - m)
+                self.mm = math.sin(math.pi - m) * m
+
+            phi = cosine * self.cos_m - sine * self.sin_m
+            phi = torch.where((cosine - self.th) > 0, phi, cosine - self.mm)
+
+            one_hot = torch.zeros_like(cosine)  # [N_valid, C]
+            one_hot.scatter_(1, joint_cls_valid.view(-1, 1), 1)
+
+            arcface_out = (one_hot * phi) + ((1.0 - one_hot) * cosine)
+            arcface_out = arcface_out * s
+
+        return arcface_out, embedding_vec, joint_cls_valid
 
     def forward(self, videos):
-        # consider batch
+        # # consider batch
+        # vec_for_a_frame = []
+        #
+        # for frame_idx in range(self.config.MAX_FRAMES):
+        #     vec_for_a_joint = []
+        #     for i, joint_name in enumerate(self.config.JOINTS_NAME): # consider only joint(2~21), not pad, cls token (0,1)
+        #         joint_info, joint_token = self.preprocess_joint_info(videos, frame_idx, joint_name)
+        #         vec = self.forward_propagation(joint_info, joint_token)
+        #         vec_for_a_joint.append(vec)
+        #     a_frame = torch.stack(vec_for_a_joint, dim=1) # stacked shape: [BS, 20, 768]
+        #     vec_for_a_frame.append(a_frame)
+        # videos = torch.stack(vec_for_a_frame, dim=1) # BS, MAX_FRAME, 20, 768
+        #
+        # return videos
+
         vec_for_a_frame = []
+
+        # ArcFace loss accumulator
+        loss_sum = None
+        valid_count = 0
+
+        if self.config.USE_ARCFACE:
+            loss_sum = torch.tensor(0.0, device=self.config.DEVICE)
 
         for frame_idx in range(self.config.MAX_FRAMES):
             vec_for_a_joint = []
-            for i, joint_name in enumerate(self.config.JOINTS_NAME): # consider only joint(2~21), not pad, cls token (0,1)
-                joint_info, joint_token = self.preprocess_joint_info(videos, frame_idx, joint_name)
-                vec = self.forward_propagation(joint_info, joint_token)
-                vec_for_a_joint.append(vec)
-            a_frame = torch.stack(vec_for_a_joint, dim=1) # stacked shape: [BS, 20, 768]
-            vec_for_a_frame.append(a_frame)
-        videos = torch.stack(vec_for_a_frame, dim=1) # BS, MAX_FRAME, 20, 768
 
-        return videos
+            for joint_name in self.config.JOINTS_NAME:
+                joint_info, joint_token = self.preprocess_joint_info(videos, frame_idx, joint_name)
+
+                arcface_out, vec, joint_cls_valid = self.forward_propagation(joint_info, joint_token)
+                vec_for_a_joint.append(vec)
+
+                if self.config.USE_ARCFACE:
+                    # only add loss when we actually computed logits for valid samples
+                    if arcface_out is not None and joint_cls_valid is not None and arcface_out.numel() > 0:
+                        loss_sum = loss_sum + self.criterion(arcface_out, joint_cls_valid)
+                        valid_count += joint_cls_valid.numel()
+
+            a_frame = torch.stack(vec_for_a_joint, dim=1)  # [BS, 20, 768]
+            vec_for_a_frame.append(a_frame)
+
+        videos = torch.stack(vec_for_a_frame, dim=1)  # [BS, MAX_FRAME, 20, 768]
+
+        if self.config.USE_ARCFACE:
+            return videos, loss_sum, valid_count
+        else:
+            return videos
 
 
 if __name__ == '__main__':

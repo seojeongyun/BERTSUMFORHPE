@@ -5,6 +5,7 @@ from types import SimpleNamespace
 config = SimpleNamespace()
 
 #
+config.USE_ARCFACE = False
 config.EMB_INIT = False # True: initialization, False: pretrained model load
 #
 
@@ -16,7 +17,7 @@ config.BATCH_SIZE = 32
 
 # MODE
 config.TASK_MODE = 'TRAIN' # ['TRAIN', 'VAL']
-config.EMB_MODE = 'RELATIVE_BASIS' # ['RELATIVE_BASIS', 'RELATIVE', 'BASIS']
+config.EMB_MODE = 'RELATIVE' # ['RELATIVE_BASIS', 'RELATIVE', 'BASIS']
 config.BASIS_FREEZE = False     # False -> False /
 config.RELATIVE_FREEZE = True   # False -> True
 
@@ -59,19 +60,25 @@ config.JOINTS_NAME = [
     ]
 
 # PRETRAINED MODEL PATH
+config.ARCFACE_PARAM = {}
 if config.EMB_MODE == 'RELATIVE_BASIS':
     config.USE_EMBEDDING = True
     # RELATIVE PATH
     config.PRETRAINED_PATH = '/storage/jysuh/BERTSUMFORHPE/checkpoint/jy_weight/[Basis+Relative] LAYERS_NUM:4 DIM:768 ACT:GELU s:10 m:0.1/metric_learning_model.pth.tar'
     # nn.EMBEDDING PATH
     config.PRETRAINED_EMB_PATH = '/storage/jysuh/BERTSUMFORHPE/checkpoint/jy_weight/[Basis+Relative] LAYERS_NUM:4 DIM:768 ACT:GELU s:10 m:0.1/nn_embedding_model.pt'
+    config.ARCFACE_PARAM['m'] = 0.5
+    config.ARCFACE_PARAM['s'] = 10
 
 elif config.EMB_MODE == 'RELATIVE':
     config.USE_EMBEDDING = False
     ## CHANGE PATH) LAYER_NUM = {2,4,6}
-    config.PRETRAINED_PATH = '/storage/jysuh/BERTSUMFORHPE/checkpoint/jy_weight/[Relative] LAYERS_NUM:6 DIM:768 ACT:GELU s:10 m:0.1/metric_learning_model.pth.tar'
+    config.PRETRAINED_PATH = '/storage/jysuh/BERTSUMFORHPE/checkpoint/jy_weight/[Relative] LAYERS_NUM:4 DIM:768 ACT:GELU s:10 m:0.1/metric_learning_model.pth.tar'
     # config.PRETRAINED_EMB_PATH = '/storage/jysuh/BERTSUMFORHPE/checkpoint/jy_weight/[Relative] LAYERS_NUM:4 DIM:768 ACT:GELU s:10 m:0.1/nn_embedding_model.pt'
-
+    # config.ARCFACE_PARAM['m'] = 0.45
+    # config.ARCFACE_PARAM['s'] = 50
+    config.ARCFACE_PARAM['m'] = 0.1
+    config.ARCFACE_PARAM['s'] = 10
 ## 260225
 elif config.EMB_MODE == 'BASIS':
     config.USE_EMBEDDING = True

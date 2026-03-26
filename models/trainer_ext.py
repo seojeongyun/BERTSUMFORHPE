@@ -333,7 +333,7 @@ class Trainer(object):
     def train(self, device, train_steps, valid_iter_fct=None, valid_steps=-1):
         logger.info("Start training...")        #
         for epoch in range(self.train_epoch):
-            print("\n============== [{}][Model: TRAIN_MODE] TRAIN START ==============".format(epoch))
+            print("\n============== [{}][Model: TRAIN_MODE] TRAIN START ==============".format(epoch+1))
             self.model.train()
             self.embedder.train()
             #
@@ -510,13 +510,13 @@ class Trainer(object):
             epoch_time = end - start
             #
             # Metric
-            avg_train_loss = Train_total_loss / total_samples_seen
+            avg_train_loss = Train_total_loss / len(self.data_loader)
             Train_exercise_cls_accuracy = 100.0 * exercise_classification_acc / total_samples_seen
             #
             if self.config.USE_ARCFACE:
-                avg_total_loss = Train_total_loss / total_samples_seen
-                avg_ex_loss = Train_exercise_loss / total_samples_seen
-                avg_arc_loss = Train_arcface_loss / total_samples_seen
+                avg_total_loss = Train_total_loss / len(self.data_loader)
+                avg_ex_loss = Train_exercise_loss / len(self.data_loader)
+                avg_arc_loss = Train_arcface_loss / len(self.data_loader)
             #
             precision = condition_tp / (condition_tp + condition_fp + 1e-8)
             recall = condition_tp / (condition_tp + condition_fn + 1e-8)
@@ -525,8 +525,8 @@ class Trainer(object):
             if self.config.USE_ARCFACE:
                 print(f"[TRAIN][Epoch {1 + epoch}] "
                       f"Avg_Loss: {avg_total_loss:.6f} | "
-                      f"Exercise_Loss: {avg_ex_loss / (step + 1):.4f} | "
-                      f"Arcface_Loss: {avg_arc_loss / (step + 1):.4f} | "
+                      f"Exercise_Loss: {avg_ex_loss:.4f} | "
+                      f"Arcface_Loss: {avg_arc_loss :.4f} | "
                       f"Exercise_ACC: {Train_exercise_cls_accuracy:.2f}% | "
                       f"P: {precision:.4f} | "
                       f"R: {recall:.4f} | "
@@ -667,6 +667,7 @@ class Trainer(object):
                     'model_scheduler_state_dict': self.optim.scheduler.state_dict() if self.args.use_scheduler else None,
                 }
                 torch.save(ckpt, '/home/jysuh/PycharmProjects/BERTSUMFORHPE (trainable_ver)/multi_cls_model_save/temp_save.pt')
+                print('Model save...')
 
                 # Load code
                 # ckpt = torch.load(save_path, map_location=self.device)

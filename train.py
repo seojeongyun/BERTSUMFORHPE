@@ -146,7 +146,7 @@ if __name__ == '__main__':
     parser.add_argument("-weighted_loss", default=True, type=bool)
     parser.add_argument("-weighted_loss_value", default=1.3, type=float)
     parser.add_argument("-threshold", default=0.7, type=float)
-    parser.add_argument("-attach_cls_token_to_end_of_seqlen", default=False, type=bool)
+    parser.add_argument("-attach_cls_token_to_end_of_seqlen", default=True, type=bool)
 
 
     args = parser.parse_args()
@@ -159,7 +159,6 @@ if __name__ == '__main__':
     print('lr:{}'.format(args.lr))
     print('load bert ckpt:{}'.format(bool(args.train_from)))
     print('weighted_loss_value:{}'.format(args.weighted_loss_value))
-    print('decouple_mode:{}'.format(args.decouple_mode))
     print('cond_loss_weight:{}'.format(args.cond_loss_weight))
     print('ex_loss_weight: {}'.format(args.ex_loss_weight))
     print('threshold:{}'.format(args.threshold))

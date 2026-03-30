@@ -17,7 +17,7 @@ config.BATCH_SIZE = 32
 
 # MODE
 config.TASK_MODE = 'TRAIN' # ['TRAIN', 'VAL']
-config.EMB_MODE = 'RELATIVE' # ['RELATIVE_BASIS', 'RELATIVE', 'BASIS']
+config.EMB_MODE = 'RELATIVE_BASIS' # ['RELATIVE_BASIS', 'RELATIVE', 'BASIS']
 config.BASIS_FREEZE = False     # False -> False /
 config.RELATIVE_FREEZE = True   # False -> True
 

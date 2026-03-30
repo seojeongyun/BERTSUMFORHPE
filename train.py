@@ -140,12 +140,12 @@ if __name__ == '__main__':
     parser.add_argument("-bert_random_init", default=False)
     parser.add_argument("-embedder_random_init", default=False)
 
-    parser.add_argument("-cond_loss_weight", default=1.5,type=float)
+    parser.add_argument("-cond_loss_weight", default=5.0,type=float)
     parser.add_argument("-ex_loss_weight", default=0.5, type=float)
 
     parser.add_argument("-weighted_loss", default=True, type=bool)
     parser.add_argument("-weighted_loss_value", default=1.3, type=float)
-    parser.add_argument("-threshold", default=0.7, type=float)
+    parser.add_argument("-threshold", default=0.65, type=float)
     parser.add_argument("-attach_cls_token_to_end_of_seqlen", default=True, type=bool)
 
 

@@ -104,83 +104,14 @@ class ErrorHandler(object):
 
 
 def validate_ext(args, config, device_id):
-    timestep = 0
-    if (args.test_all):
-        cp_files = sorted(glob.glob(os.path.join(args.model_path, 'model_epoch_*.pt')))
-        cp_files.sort(key=os.path.getmtime)
-        xent_lst = []
-        for i, cp in enumerate(cp_files):
-            step = int(cp.split('.')[-2].split('_')[-1])
-            xent = validate(args, config, device_id, cp, step)
-            xent_lst.append((xent, cp))
-            max_step = xent_lst.index(min(xent_lst))
-            if (i - max_step > 10):
-                break
-        xent_lst = sorted(xent_lst, key=lambda x: x[0])[:3]
-        logger.info('PPL %s' % str(xent_lst))
-        for xent, cp in xent_lst:
-            step = int(cp.split('.')[-2].split('_')[-1])
-            # test_ext(args, device_id, cp, step)
-    else:
-        while (True):
-            # cp_files = sorted(glob.glob(os.path.join('/home/hjchoi/PycharmProjects/BERTSUMFORHPE(bk_251210)', args.model_path, 'RELATIVE_BASIS/relative_FalseNUM_LAYER:4/*.pt')))
-            cp_files = sorted(glob.glob(os.path.join()))
-            cp_files.sort(key=os.path.getmtime)
-            if (cp_files):
-                cp = cp_files[-1]
-                time_of_cp = os.path.getmtime(cp)
-                if (not os.path.getsize(cp) > 0):
-                    time.sleep(60)
-                    continue
-                if (time_of_cp > timestep):
-                    timestep = time_of_cp
-                    step = int(cp.split('.')[-2].split('_')[-1])
-                    validate(args, config, device_id, cp, step)
-                    # test_ext(args, device_id, cp, step)
-
-            cp_files = sorted(glob.glob(os.path.join(args.model_path, 'model_epoch_*.pt')))
-            cp_files.sort(key=os.path.getmtime)
-            if (cp_files):
-                cp = cp_files[-1]
-                time_of_cp = os.path.getmtime(cp)
-                if (time_of_cp > timestep):
-                    continue
-            else:
-                time.sleep(300)
+    validate(args, config, device_id)
 
 
-def validate(args, config, device_id, pt, step):
+def validate(args, config, device_id):
     device = "cpu" if args.visible_gpus == '-1' else "cuda"
-    if (pt != ''):
-        test_from = pt
-    else:
-        test_from = args.test_from
-    logger.info('Loading checkpoint from %s' % test_from)
-    checkpoint = torch.load(test_from, map_location='cpu')
-    new_state_dict = {}
-    for key, value in checkpoint['model'].items():
-        if key.startswith('bert.encoder.'):
-            continue
-        elif key.startswith('bert.model.'):
-            new_state_dict[key] = value
-        elif key.startswith('ext_layer.'):
-            new_state_dict[key] = value
-        elif key.startswith('embeddings.') or key.startswith('encoder.') or key.startswith('pooler.'):
-            new_key = 'bert.model.' + key
-            new_state_dict[new_key] = value
-        else:
-            new_state_dict[key] = value
 
-    modified_checkpoint = checkpoint.copy()
-    modified_checkpoint['model'] = new_state_dict
-
-    opt = vars(checkpoint['opt'])
-    for k in opt.keys():
-        if (k in model_flags):
-            setattr(args, k, opt[k])
-    print(args)
-
-    model = ExtSummarizer(args, device, modified_checkpoint)
+    model = ExtSummarizer(args, device, checkpoint=None)
+    # here #
     model.eval()
     # from torch.utils.data.dataloader import DataLoader
     # from Embedder.data_loader import Video_Loader
@@ -207,7 +138,37 @@ def validate(args, config, device_id, pt, step):
         collate_fn=video_dataset.collate_fn)
 
     trainer = build_trainer(args, config, device_id, model, None)
-    stats = trainer.validate(video_loader, video_dataset, step)
+
+    # Load Multi-Head Model from Checkpoint
+    ckpt_path = "/home/jysuh/PycharmProjects/BERTSUMFORHPE (trainable_ver)/multi_cls_model_save/temp_save.pt"
+    ckpt = torch.load(ckpt_path, map_location=device)
+
+    new_state_dict = {}
+
+    for key, value in ckpt["model_state_dict"].items():
+        if key.startswith("bert.encoder."):
+            new_key = key.replace("bert.encoder.", "bert.model.encoder.", 1)
+        elif key.startswith("bert.embeddings."):
+            new_key = key.replace("bert.embeddings.", "bert.model.embeddings.", 1)
+        elif key.startswith("bert.pooler."):
+            new_key = key.replace("bert.pooler.", "bert.model.pooler.", 1)
+        else:
+            new_key = key
+
+        new_state_dict[new_key] = value
+
+    missing, unexpected = trainer.model.load_state_dict(new_state_dict, strict=False)
+
+    print("Missing keys:", missing)
+    print("Unexpected keys:", unexpected)
+
+    trainer.embedder.load_state_dict(ckpt["embedder_state_dict"], strict=True)
+
+    trainer.model.eval()
+    trainer.embedder.eval()
+    #
+
+    stats = trainer.validate(video_loader, video_dataset)
     return stats.xent()
 
 

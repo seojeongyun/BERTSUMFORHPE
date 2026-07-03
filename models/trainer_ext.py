@@ -694,29 +694,106 @@ class Trainer(object):
         Returns:
             :obj:`nmt.Statistics`: validation loss statistics
         """
-        self.model.eval()
         stats = Statistics()
 
+        self.model.eval()
+        self.embedder.eval()
+
         with torch.no_grad():
-            Valid_acc_hist = []
-            Valid_correct_predictions = 0
-            for step, (videos, exercise_name) in enumerate(video_loader):
-                output = self.embedder(videos)
-                #
+            exercise_classification_acc = 0
+            #
+            condition_tp = 0
+            condition_fp = 0
+            condition_fn = 0
+            #
+            valid_samples_seen = 0
+            for step, (videos, exercise_name, conditions) in enumerate(video_loader):
+
+                B = len(exercise_name)
+                D = self.config.NUM_CONDITIONS
+
+                # ---- exercise target ----
+                ex_idx = torch.tensor(exercise_name, dtype=torch.long, device=self.device) - 22
+
+                # ---- condition label ----
+                cond_label = torch.zeros((B, D), device=self.device, dtype=torch.float32)
+                cond_mask = torch.zeros((B, D), device=self.device, dtype=torch.bool)
+                flat = [(b, (int(c) - 22) - self.config.CLASS_NUM, 0.0 if f else 1.0)
+                        for b, conds in enumerate(conditions)
+                        for c, f in conds]
+
+                if flat:
+                    rr, cc, vv = zip(*flat)
+
+                    if step == 0:
+                        cc_cpu = torch.tensor(cc)  #
+                        assert cc_cpu.min().item() >= 0 and cc_cpu.max().item() < D, \
+                            f"Condition index out of range: [{cc_cpu.min().item()}, {cc_cpu.max().item()}], D={D}"
+
+                    rr = torch.tensor(rr, device=self.device)
+                    cc = torch.tensor(cc, device=self.device)
+                    vv = torch.tensor(vv, device=self.device, dtype=torch.float32)
+                    cond_label[rr, cc] = vv
+                    cond_mask[rr, cc] = True
+                # ---- forward ----
+                if self.config.USE_ARCFACE:
+                    output, _, _ = self.embedder(videos)
+                else:
+                    output = self.embedder(videos)
                 input_embs, segs, pad_mask = self.emb_(output)
-                tgt = torch.tensor(exercise_name).to(self.device) - 22
-                sent_scores = self.model(input_embs, segs, pad_mask).to(self.device)
-                pred_exercise = torch.argmax(sent_scores, dim=1)
+                ex_logits, cond_logits = self.model(input_embs, segs, pad_mask)
 
-                correct_predictions = (pred_exercise == tgt).sum().item()
-                Valid_correct_predictions += correct_predictions
+                # ---- Exercise ACC ----
+                pred_ex = torch.argmax(ex_logits, dim=1)
+                exercise_classification_acc += (pred_ex == ex_idx).sum().item()
 
-                accuracy = correct_predictions / tgt.size(0) * 100
-                if step % 20 == 0:
-                    print('[VALID] step:{},  acc:{:.2f}%'.format(step,accuracy))
-                Valid_acc_hist.append(accuracy)
-            total_val_acc = sum(Valid_acc_hist) / len(Valid_acc_hist)
-            print('[Final VALID] acc:{:.2f}%'.format(total_val_acc))
+                # ---- Condition metrics ----
+                mask_bool = cond_mask.bool()
+                pred_cond = (torch.sigmoid(cond_logits) > self.threshold) & mask_bool
+                tgt_cond = (cond_label > self.threshold) & mask_bool
+
+                if step % 10 == 0:
+                    print('============ step {} =========='.format(step))
+                    # ---- Exercise debug ----
+                    pred_raw = int(pred_ex[0].item()) + 22
+                    tgt_raw = int(ex_idx[0].item()) + 22
+
+                    print(f"Expected: {self.ex_int2str[tgt_raw]}\nPredicted: {self.ex_int2str[pred_raw]}")
+
+                    # ---- Condition debug ----
+                    mask0 = cond_mask[0].bool()  # [D]
+                    p_local = (pred_cond[0] & mask0).nonzero(as_tuple=True)[0]
+                    t_local = (tgt_cond[0] & mask0).nonzero(as_tuple=True)[0]
+
+                    # local -> raw = local + CLASS_NUM + 22
+                    p_raw = p_local + (self.config.CLASS_NUM + 22)
+                    t_raw = t_local + (self.config.CLASS_NUM + 22)
+
+                    p_condition_lst = [self.cond_int2str[int(idx.item())] for idx in p_raw]
+                    t_condition_lst = [self.cond_int2str[int(idx.item())] for idx in t_raw]
+
+                    print("Expected: " + ", ".join(t_condition_lst))
+                    print("Predicted: " + ", ".join(p_condition_lst))
+
+                tp = (pred_cond & tgt_cond).sum().item()
+                fp = (pred_cond & ~tgt_cond).sum().item()
+                fn = (~pred_cond & tgt_cond).sum().item()
+
+                condition_tp += tp
+                condition_fp += fp
+                condition_fn += fn
+
+                batch_size = cond_label.size(0)
+                valid_samples_seen += batch_size
+            #
+            Valid_exercise_cls_accuracy = 100.0 * exercise_classification_acc / valid_samples_seen
+            precision = condition_tp / (condition_tp + condition_fp + 1e-8)
+            recall = condition_tp / (condition_tp + condition_fn + 1e-8)
+            f1 = 2 * precision * recall / (precision + recall + 1e-8)
+            #
+            print(
+                '[VALID] Exercise_CLS_Accuracy: {:.2f}%, Condition_CLS_Precision: {:.4f}, Condition_CLS_Recall: {:.4f}, Condition_CLS_F1: {:.4f}'
+                .format(Valid_exercise_cls_accuracy, precision, recall, f1))
             return stats
 
     def test(self, test_iter, step, cal_lead=False, cal_oracle=False):

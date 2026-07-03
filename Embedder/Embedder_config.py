@@ -30,7 +30,8 @@ config.IN_FEAT = 4 # 4 or 4+5
 #
 if config.IN_FEAT == 4: # or 4+97
     config.T_DATA_PATH = '/storage/jysuh/BERTSUMFORHPE/embedder_dataset/multi_label_classification_train.pkl'
-    config.V_DATA_PATH = '/storage/jysuh/BERTSUMFORHPE/embedder_dataset/multi_label_classification_valid.pkl'
+    # config.V_DATA_PATH = '/storage/jysuh/BERTSUMFORHPE/embedder_dataset/multi_label_classification_valid.pkl'
+    config.V_DATA_PATH = '/home/jysuh/PycharmProjects/ex_cls_test/BERT_Demo.pkl'
 elif config.IN_FEAT == 4+5:
     config.T_DATA_PATH = '/storage/jysuh/BERTSUMFORHPE/embedder_dataset/MultiLabelCls_train_5dim.pkl'
     config.V_DATA_PATH = '/storage/jysuh/BERTSUMFORHPE/embedder_dataset/MultiLabelCls_valid_5dim.pkl'

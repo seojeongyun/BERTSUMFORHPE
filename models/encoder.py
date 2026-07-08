@@ -5,41 +5,77 @@ import torch.nn as nn
 
 from models.neural import MultiHeadedAttention, PositionwiseFeedForward
 
-
 class Classifier(nn.Module):
     def __init__(self, hidden_size, args):
         super(Classifier, self).__init__()
-        # ver 1
         self.args = args
 
         self.exercise_linear = nn.Linear(hidden_size, 256)
-        self.exercise_classifier =nn.Linear(256 ,41)
+        self.exercise_classifier = nn.Linear(256, 41)
 
+        self.condition_queries = nn.Embedding(97, hidden_size)
         self.conditions_linear = nn.Linear(hidden_size, 256)
-        self.conditions_classifier = nn.Linear(256, 97)
-        #
+        self.conditions_classifier = nn.Linear(256, 1)
 
         self.act = nn.ReLU()
 
     def forward(self, x):
-        # [BS,SEQ_LEN,DIM]
         first_cls = x[:, 0, :]
 
-        if self.args.attach_cls_token_to_end_of_seqlen:
-            last_cls = x[:, -1, :]
-            exercise_cls = first_cls
-            condition_cls = last_cls
-        else:
-            exercise_cls = first_cls
-            condition_cls = first_cls
-
-        exercise_out = self.exercise_linear(exercise_cls)
+        exercise_out = self.exercise_linear(first_cls)
         pred_exercise = self.exercise_classifier(self.act(exercise_out))
-        #
-        condition_out = self.conditions_linear(condition_cls)
-        pred_conditions = self.conditions_classifier(self.act(condition_out))
-        #
+
+        B, S, H = x.size()
+
+        queries = self.condition_queries.weight  # [97, H]
+
+        attn_scores = torch.einsum("bsh,ch->bcs", x, queries)
+        attn_scores = attn_scores / (H ** 0.5)
+
+        attn_weights = torch.softmax(attn_scores, dim=-1)
+
+        condition_context = torch.einsum("bcs,bsh->bch", attn_weights, x)
+
+        condition_hidden = self.act(self.conditions_linear(condition_context))
+
+        pred_conditions = self.conditions_classifier(condition_hidden).squeeze(-1)
+
         return pred_exercise, pred_conditions
+
+# class Classifier(nn.Module):
+#     def __init__(self, hidden_size, args):
+#         super(Classifier, self).__init__()
+#         # ver 1
+#         self.args = args
+#
+#         self.exercise_linear = nn.Linear(hidden_size, 256)
+#         self.exercise_classifier =nn.Linear(256 ,41)
+#
+#         self.conditions_linear = nn.Linear(hidden_size, 256)
+#         self.conditions_classifier = nn.Linear(256, 97)
+#         #
+#
+#         self.act = nn.ReLU()
+#
+#     def forward(self, x):
+#         # [BS,SEQ_LEN,DIM]
+#         first_cls = x[:, 0, :]
+#
+#         if self.args.attach_cls_token_to_end_of_seqlen:
+#             last_cls = x[:, -1, :]
+#             exercise_cls = first_cls
+#             condition_cls = last_cls
+#         else:
+#             exercise_cls = first_cls
+#             condition_cls = first_cls
+#
+#         exercise_out = self.exercise_linear(exercise_cls)
+#         pred_exercise = self.exercise_classifier(self.act(exercise_out))
+#         #
+#         condition_out = self.conditions_linear(condition_cls)
+#         pred_conditions = self.conditions_classifier(self.act(condition_out))
+#         #
+#         return pred_exercise, pred_conditions
 
 
 class PositionalEncoding(nn.Module):

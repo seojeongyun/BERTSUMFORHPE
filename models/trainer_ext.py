@@ -332,6 +332,9 @@ class Trainer(object):
 
     def train(self, device, train_steps, valid_iter_fct=None, valid_steps=-1):
         logger.info("Start training...")        #
+        #
+        best_perf = 0.0
+        best_model = False
         for epoch in range(self.train_epoch):
             print("\n============== [{}][Model: TRAIN_MODE] TRAIN START ==============".format(epoch+1))
             self.model.train()
@@ -570,6 +573,7 @@ class Trainer(object):
                     condition_fn = 0
                     #
                     valid_samples_seen = 0
+                    #
                     for step, (videos, exercise_name, conditions) in enumerate(self.valid_data_loader):
 
                         B = len(exercise_name)
@@ -656,18 +660,32 @@ class Trainer(object):
                     print(
                         '[VALID] Exercise_CLS_Accuracy: {:.2f}%, Condition_CLS_Precision: {:.4f}, Condition_CLS_Recall: {:.4f}, Condition_CLS_F1: {:.4f}'
                         .format(Valid_exercise_cls_accuracy, precision, recall, f1))
+                    #
+                    ckpt = {
+                        'epoch': epoch,
+                        'embedder_state_dict': self.embedder.state_dict(),
+                        'model_state_dict': self.model.state_dict(),
+                        'embedder_optimizer_state_dict': self.embedder.optimizer.state_dict() if self.config.USE_ARCFACE else None,
+                        'model_optimizer_state_dict': self.optim.optimizer.state_dict(),
+                        'embedder_scheduler_state_dict': self.embedder.scheduler.state_dict() if self.config.USE_ARCFACE else None,
+                        'model_scheduler_state_dict': self.optim.scheduler.state_dict() if self.args.use_scheduler else None,
+                    }
+                    #
+                    if f1 > best_perf:
+                        best_perf = f1
+                        best_model = True
+                    else:
+                        best_model = False
 
-                ckpt = {
-                    'epoch': epoch,
-                    'embedder_state_dict': self.embedder.state_dict(),
-                    'model_state_dict': self.model.state_dict(),
-                    'embedder_optimizer_state_dict': self.embedder.optimizer.state_dict() if self.config.USE_ARCFACE else None,
-                    'model_optimizer_state_dict': self.optim.optimizer.state_dict(),
-                    'embedder_scheduler_state_dict': self.embedder.scheduler.state_dict() if self.config.USE_ARCFACE else None,
-                    'model_scheduler_state_dict': self.optim.scheduler.state_dict() if self.args.use_scheduler else None,
-                }
-                torch.save(ckpt, '/home/jysuh/PycharmProjects/BERTSUMFORHPE (trainable_ver)/multi_cls_model_save/temp_save.pt')
-                print('Model save...')
+                    if best_model:
+                        torch.save(ckpt,
+                                   '/home/jysuh/PycharmProjects/BERTSUMFORHPE (trainable_ver)/multi_cls_model_save/best_model_ckpt.pt')
+                        print('Best Model save...')
+
+                # Final Epoch Checkpoint
+                torch.save(ckpt,
+                           '/home/jysuh/PycharmProjects/BERTSUMFORHPE (trainable_ver)/multi_cls_model_save/final_epoch_ckpt.pt')
+                print('Final Epoch Model save...')
 
                 # Load code
                 # ckpt = torch.load(save_path, map_location=self.device)
